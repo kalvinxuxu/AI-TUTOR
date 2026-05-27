@@ -78,7 +78,7 @@ export async function createProblemFromImage(
 
     if (error) {
       console.error('Failed to persist problem to Supabase:', error);
-      // Continue anyway - we still have the in-memory record
+      throw new Error('Failed to persist problem: ' + error.message);
     }
   }
 

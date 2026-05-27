@@ -49,6 +49,7 @@ export async function createSession(userId: string, problemId: string): Promise<
 
     if (error) {
       console.error('Failed to persist session to Supabase:', error);
+      throw new Error('Failed to persist session: ' + error.message);
     }
   }
 
@@ -130,6 +131,7 @@ export async function addMessage(
 
     if (error) {
       console.error('Failed to persist message to Supabase:', error);
+      throw new Error('Failed to persist message: ' + error.message);
     }
   }
 
