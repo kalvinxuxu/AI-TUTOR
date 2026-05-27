@@ -191,7 +191,7 @@ export function buildEvaluationPrompt(context: {
   tutorState?: string;
   hintLevel?: number;
 }): string {
-  let prompt = `## Problem to Evaluate
+  const prompt = `## Problem to Evaluate
 ${context.problemText}
 
 **Problem Type:** ${context.problemType || 'unknown'}
