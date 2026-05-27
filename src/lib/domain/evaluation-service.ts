@@ -208,3 +208,56 @@ Only respond with valid JSON.`;
 
 // Singleton instance
 export const evaluationService = new EvaluationService();
+
+/**
+ * Classify error based on student input patterns
+ * Per TDG Section 11.4 - Error Classification Rules
+ * @param studentInput - The student's response
+ * @param modelErrorType - Error type from evaluation model (optional)
+ * @returns Classified ErrorType
+ */
+export function classifyError(studentInput: string, modelErrorType: ErrorType | null): ErrorType {
+  // If model returns valid error type, use it
+  if (modelErrorType) {
+    return modelErrorType;
+  }
+
+  const input = studentInput.toLowerCase();
+
+  // Basic arithmetic errors - check BEFORE sign errors (more specific patterns)
+  if (
+    input.includes('arithmetic') ||
+    input.includes('calculate') ||
+    /[0-9]+\s*[+\-*/]\s*[0-9]+\s*=\s*[0-9]+/.test(input) ||
+    input.includes('addition') ||
+    input.includes('subtraction') ||
+    input.includes('multiplication') ||
+    input.includes('division')
+  ) {
+    return 'calculation_error';
+  }
+
+  // Bracket errors / sign errors
+  if (
+    input.includes('bracket') ||
+    input.includes('sign') ||
+    /[+\-][^0-9]/.test(input) ||
+    (input.includes('move') && input.includes('term'))
+  ) {
+    return 'sign_error';
+  }
+
+  // Skipping middle derivation / step_skip
+  if (
+    input.includes('skip') ||
+    input.includes('jump') ||
+    input.includes('miss') ||
+    /->.*->/.test(input) ||
+    (input.includes('directly') && input.includes('answer'))
+  ) {
+    return 'step_skip';
+  }
+
+  // Default to concept_error
+  return 'concept_error';
+}
