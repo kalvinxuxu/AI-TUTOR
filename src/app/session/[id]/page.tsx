@@ -1,10 +1,15 @@
 // AI Tutoring - Session Page
 // TODO: Implement session view with tutor interaction
 
-export default function SessionPage({ params }: { params: { id: string } }) {
+interface SessionPageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default async function SessionPage({ params }: SessionPageProps) {
+  const { id } = await params;
   return (
     <div className="container">
-      <h1>Session: {params.id}</h1>
+      <h1>Session: {id}</h1>
       <p>Tutor session functionality coming soon.</p>
     </div>
   );

@@ -6,7 +6,7 @@ export class ProfileService {
     return { id: userId, name: 'User', role: 'student' };
   }
 
-  async updateProfile(userId: string, data: unknown): Promise<unknown> {
+  async updateProfile(userId: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
     return { id: userId, ...data };
   }
 
