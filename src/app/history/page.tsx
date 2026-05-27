@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
+  ChevronLeft,
   Calendar,
   Clock,
   CheckCircle,
@@ -10,241 +11,231 @@ import {
   AlertCircle,
   ChevronRight,
   Loader2,
-  Filter,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 
 interface SessionSummary {
   id: string;
   problemText: string;
-  status: "active" | "completed" | "abandoned";
+  status: "completed" | "abandoned";
   startedAt: string;
   endedAt: string | null;
   knowledgePoints: string[];
+  completionType?: "self" | "hint" | "solution";
+  hintCount?: number;
 }
 
 export default function HistoryPage() {
   const router = useRouter();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "completed" | "abandoned">("all");
-  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
-    // For MVP, we simulate sessions since the API doesn't have a list endpoint yet
-    // In production, this would fetch from /api/sessions
-    const mockSessions: SessionSummary[] = [
-      {
-        id: "session-1",
-        problemText: "Calculate the area of a circle with radius 5cm",
-        status: "completed",
-        startedAt: new Date(Date.now() - 86400000).toISOString(),
-        endedAt: new Date(Date.now() - 86400000 + 1800000).toISOString(),
-        knowledgePoints: ["Geometry", "Circle Area"],
-      },
-      {
-        id: "session-2",
-        problemText: "Solve for x: 2x + 5 = 15",
-        status: "completed",
-        startedAt: new Date(Date.now() - 172800000).toISOString(),
-        endedAt: new Date(Date.now() - 172800000 + 2400000).toISOString(),
-        knowledgePoints: ["Algebra", "Linear Equations"],
-      },
-      {
-        id: "session-3",
-        problemText: "What is the derivative of x^2?",
-        status: "abandoned",
-        startedAt: new Date(Date.now() - 432000000).toISOString(),
-        endedAt: null,
-        knowledgePoints: ["Calculus", "Derivatives"],
-      },
-    ];
+    const fetchSessions = async () => {
+      try {
+        const response = await fetch('/api/sessions');
+        const data = await response.json();
 
-    setTimeout(() => {
-      setSessions(mockSessions);
-      setIsLoading(false);
-    }, 500);
+        if (data.success && data.data) {
+          setSessions(data.data.sessions);
+        }
+      } catch {
+        // Keep empty sessions on error
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSessions();
   }, []);
 
-  const filteredSessions = sessions.filter((session) => {
-    // Status filter
-    if (filter !== "all" && session.status !== filter) {
-      return false;
-    }
-    // Search filter
-    if (searchQuery && !session.problemText.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false;
-    }
-    return true;
-  });
+  const groupSessionsByDate = (sessions: SessionSummary[]) => {
+    const groups: Record<string, SessionSummary[]> = {};
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
+    sessions.forEach((session) => {
+      const date = new Date(session.startedAt);
+      const dateKey = new Intl.DateTimeFormat("zh-CN", {
+        month: "long",
+        day: "numeric",
+      }).format(date);
+
+      if (!groups[dateKey]) {
+        groups[dateKey] = [];
+      }
+      groups[dateKey].push(session);
+    });
+
+    return groups;
+  };
+
+  const formatTime = (dateString: string) => {
+    return new Intl.DateTimeFormat("zh-CN", {
       hour: "2-digit",
       minute: "2-digit",
-    }).format(date);
+    }).format(new Date(dateString));
   };
 
   const getDuration = (startedAt: string, endedAt: string | null) => {
-    if (!endedAt) return "In progress";
+    if (!endedAt) return "进行中";
     const start = new Date(startedAt).getTime();
     const end = new Date(endedAt).getTime();
     const minutes = Math.floor((end - start) / 60000);
-    if (minutes < 60) return `${minutes} min`;
+    if (minutes < 60) return `${minutes} 分钟`;
     const hours = Math.floor(minutes / 60);
-    return `${hours}h ${minutes % 60}m`;
+    return `${hours} 小时 ${minutes % 60} 分钟`;
   };
 
+  const getCompletionLabel = (session: SessionSummary) => {
+    if (session.status === "abandoned") return "未完成";
+
+    switch (session.completionType) {
+      case "self":
+        return "自主完成";
+      case "hint":
+        return `提示${session.hintCount || 0}次完成`;
+      case "solution":
+        return "查看解析完成";
+      default:
+        return "已完成";
+    }
+  };
+
+  const getCompletionBadgeColor = (session: SessionSummary) => {
+    if (session.status === "abandoned") {
+      return "bg-amber-100 text-amber-700 border-amber-200";
+    }
+
+    switch (session.completionType) {
+      case "self":
+        return "bg-green-100 text-green-700 border-green-200";
+      case "hint":
+        return "bg-blue-100 text-blue-700 border-blue-200";
+      case "solution":
+        return "bg-slate-100 text-slate-700 border-slate-200";
+      default:
+        return "";
+    }
+  };
+
+  const handleSessionClick = (sessionId: string) => {
+    router.push(`/result/${sessionId}`);
+  };
+
+  const handleNewSession = () => {
+    router.push("/upload");
+  };
+
+  const groupedSessions = groupSessionsByDate(sessions);
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white p-8">
-      <div className="max-w-4xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-semibold text-slate-900">Session History</h1>
-            <p className="text-slate-600 mt-1">Review your past learning sessions</p>
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+      {/* Header */}
+      <header className="bg-white border-b border-slate-200 px-4 py-3 sticky top-0 z-10">
+        <div className="max-w-2xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => router.push("/")}>
+              <ChevronLeft className="w-5 h-5" />
+            </Button>
+            <span className="font-medium text-slate-900">学习记录</span>
           </div>
-          <Button onClick={() => router.push("/upload")}>
-            New Session
+          <Button size="sm" onClick={handleNewSession}>
+            新题目
           </Button>
         </div>
+      </header>
 
-        {/* Filters */}
-        <Card className="border-slate-200">
-          <CardContent className="p-4">
-            <div className="flex flex-wrap gap-4 items-center">
-              {/* Search */}
-              <div className="flex-1 min-w-[200px]">
-                <Input
-                  placeholder="Search problems..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full"
-                />
-              </div>
-
-              {/* Status Filter */}
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-slate-500" />
-                <div className="flex gap-1">
-                  <Button
-                    variant={filter === "all" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setFilter("all")}
-                  >
-                    All
-                  </Button>
-                  <Button
-                    variant={filter === "completed" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setFilter("completed")}
-                  >
-                    Completed
-                  </Button>
-                  <Button
-                    variant={filter === "abandoned" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setFilter("abandoned")}
-                  >
-                    Abandoned
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Session List */}
+      {/* Main Content */}
+      <main className="max-w-2xl mx-auto px-6 py-6 space-y-6">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
-        ) : filteredSessions.length === 0 ? (
+        ) : sessions.length === 0 ? (
           <Card className="border-slate-200">
-            <CardContent className="p-12 text-center">
+            <CardContent className="p-8 text-center">
               <AlertCircle className="w-12 h-12 mx-auto text-slate-300 mb-4" />
-              <h3 className="text-lg font-medium text-slate-700">No sessions found</h3>
-              <p className="text-slate-500 mt-1">
-                {searchQuery ? "Try a different search term" : "Start a new session to begin learning"}
+              <h3 className="text-lg font-medium text-slate-700">暂无学习记录</h3>
+              <p className="text-slate-500 mt-1 text-sm">
+                开始做题后，这里会显示你的学习历史
               </p>
+              <Button className="mt-4" onClick={handleNewSession}>
+                开始做题
+              </Button>
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-4">
-            {filteredSessions.map((session) => (
-              <Card
-                key={session.id}
-                className="cursor-pointer hover:border-primary/50 transition-colors"
-                onClick={() => router.push(`/session/${session.id}`)}
-              >
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 space-y-3">
-                      {/* Problem Text */}
-                      <p className="text-slate-900 font-medium line-clamp-2">
-                        {session.problemText}
-                      </p>
+          Object.entries(groupedSessions).map(([date, dateSessions]) => (
+            <div key={date} className="space-y-3">
+              {/* Date Header */}
+              <div className="text-sm font-medium text-slate-500 flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                {date}
+              </div>
 
-                      {/* Knowledge Points */}
-                      <div className="flex flex-wrap gap-2">
-                        {session.knowledgePoints.map((kp, index) => (
-                          <Badge key={index} variant="secondary" className="text-xs">
-                            {kp}
-                          </Badge>
-                        ))}
+              {/* Session Cards */}
+              {dateSessions.map((session) => (
+                <Card
+                  key={session.id}
+                  className="border-slate-200 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
+                  onClick={() => handleSessionClick(session.id)}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        {/* Problem Text */}
+                        <p className="text-slate-900 font-medium text-sm line-clamp-2">
+                          {session.problemText}
+                        </p>
+
+                        {/* Knowledge Points */}
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {session.knowledgePoints.map((kp, index) => (
+                            <Badge
+                              key={index}
+                              variant="secondary"
+                              className="text-xs"
+                            >
+                              {kp}
+                            </Badge>
+                          ))}
+                        </div>
+
+                        {/* Meta Info */}
+                        <div className="flex items-center gap-4 mt-3 text-xs text-slate-500">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5" />
+                            {formatTime(session.startedAt)}
+                          </span>
+                          <span>{getDuration(session.startedAt, session.endedAt)}</span>
+                        </div>
                       </div>
 
-                      {/* Meta Info */}
-                      <div className="flex items-center gap-4 text-sm text-slate-500">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-4 h-4" />
-                          {formatDate(session.startedAt)}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-4 h-4" />
-                          {getDuration(session.startedAt, session.endedAt)}
-                        </span>
+                      {/* Status Badge */}
+                      <div className="flex flex-col items-end gap-2">
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${getCompletionBadgeColor(session)}`}
+                        >
+                          {session.status === "completed" && (
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                          )}
+                          {session.status === "abandoned" && (
+                            <XCircle className="w-3 h-3 mr-1" />
+                          )}
+                          {getCompletionLabel(session)}
+                        </Badge>
+                        <ChevronRight className="w-4 h-4 text-slate-400" />
                       </div>
                     </div>
-
-                    {/* Status & Arrow */}
-                    <div className="flex items-center gap-4">
-                      <Badge
-                        variant={
-                          session.status === "completed"
-                            ? "default"
-                            : session.status === "abandoned"
-                            ? "secondary"
-                            : "outline"
-                        }
-                        className={
-                          session.status === "completed"
-                            ? "bg-green-100 text-green-700 border-green-200"
-                            : session.status === "abandoned"
-                            ? "bg-amber-100 text-amber-700 border-amber-200"
-                            : ""
-                        }
-                      >
-                        {session.status === "completed" && <CheckCircle className="w-3 h-3 mr-1" />}
-                        {session.status === "abandoned" && <XCircle className="w-3 h-3 mr-1" />}
-                        {session.status === "active" && <AlertCircle className="w-3 h-3 mr-1" />}
-                        {session.status}
-                      </Badge>
-                      <ChevronRight className="w-5 h-5 text-slate-400" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ))
         )}
-      </div>
+      </main>
     </div>
   );
 }
