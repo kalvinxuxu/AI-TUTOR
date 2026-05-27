@@ -143,7 +143,7 @@ export async function POST(
         hintLevel: 5,
       });
 
-      const solutionResponse = await tutorEngine.revealSolution();
+      const solutionResponse = await tutorEngine.revealSolution(sessionId);
 
       await sessionService.addMessage(
         sessionId,
@@ -180,13 +180,13 @@ export async function POST(
     const recentMessages = await sessionService.getRecentMessages(sessionId, 10);
 
     // Update tutor engine context
-    const context = tutorEngine.getContext();
+    const context = tutorEngine.getContext(sessionId);
     if (context) {
       context.recentMessages = recentMessages;
     }
 
     // Generate tutor response
-    const tutorResponse = await tutorEngine.generateResponse(input);
+    const tutorResponse = await tutorEngine.generateResponse(sessionId, input);
 
     // Per TDG Section 9: Return message length controlled by prompt rules
     // (actual message length is controlled by the AI model prompt)

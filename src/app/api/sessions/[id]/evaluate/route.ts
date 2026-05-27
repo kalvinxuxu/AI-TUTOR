@@ -104,6 +104,7 @@ export async function POST(
 
     // Update tutor engine with evaluation results
     tutorEngine.updateAfterEvaluation(
+      sessionId,
       evaluation.correctness,
       evaluation.understandingLevel,
       evaluation.feedbackSummary
@@ -129,7 +130,7 @@ export async function POST(
           ? [evaluation.primaryErrorType]
           : [],
         evaluation.understandingLevel,
-        tutorEngine.getContext()?.tutorState || 'observe'
+        tutorEngine.getContext(sessionId)?.tutorState || 'observe'
       );
     }
 

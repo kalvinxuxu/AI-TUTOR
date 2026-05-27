@@ -191,7 +191,7 @@ export function containsFullSolution(response: string): boolean {
  * Main tutor engine class
  */
 export class TutorEngine {
-  private context: TutorContext | null = null;
+  private contexts: Map<string, TutorContext> = new Map();
 
   /**
    * Start a new tutoring session
@@ -208,7 +208,7 @@ export class TutorEngine {
     userId: string,
     sessionId: string
   ): Promise<TutorResponse> {
-    this.context = {
+    const context: TutorContext = {
       problemText,
       problemType,
       knowledgePoints,
@@ -221,39 +221,43 @@ export class TutorEngine {
       sessionId,
     };
 
-    return generateInitialMessage(this.context);
+    this.contexts.set(sessionId, context);
+
+    return generateInitialMessage(context);
   }
 
   /**
    * Generate response for student input
+   * @param sessionId - Session ID
    * @param studentInput - Student's response
    * @returns Tutor response with state information
    */
-  async generateResponse(studentInput: string): Promise<TutorResponse> {
-    if (!this.context) {
+  async generateResponse(sessionId: string, studentInput: string): Promise<TutorResponse> {
+    const context = this.contexts.get(sessionId);
+    if (!context) {
       throw new Error('Tutor session not initialized. Call startSession first.');
     }
 
     // Add student message to history
-    this.context.recentMessages.push({
+    context.recentMessages.push({
       role: 'student',
       content: studentInput,
     });
 
     // Limit history to last 20 messages
-    if (this.context.recentMessages.length > 20) {
-      this.context.recentMessages = this.context.recentMessages.slice(-20);
+    if (context.recentMessages.length > 20) {
+      context.recentMessages = context.recentMessages.slice(-20);
     }
 
     // Generate response
-    const response = await generateResponse(this.context);
+    const response = await generateResponse(context);
 
     // Update context with new state
-    this.context.tutorState = response.tutorState;
-    this.context.hintLevel = response.hintLevel;
+    context.tutorState = response.tutorState;
+    context.hintLevel = response.hintLevel;
 
     // Add tutor response to history
-    this.context.recentMessages.push({
+    context.recentMessages.push({
       role: 'assistant',
       content: response.message,
     });
@@ -263,75 +267,91 @@ export class TutorEngine {
 
   /**
    * Update context after evaluation
+   * @param sessionId - Session ID
    * @param correctness - Evaluation correctness
    * @param understandingLevel - Student understanding
    * @param feedback - Evaluation feedback
    */
   updateAfterEvaluation(
+    sessionId: string,
     correctness: Correctness,
     understandingLevel: UnderstandingLevel,
     feedback: string
   ): void {
-    if (!this.context) return;
+    const context = this.contexts.get(sessionId);
+    if (!context) return;
 
-    this.context.lastEvaluation = { correctness, understandingLevel, feedback };
+    context.lastEvaluation = { correctness, understandingLevel, feedback };
 
     // Update consecutive counters
     if (correctness === 'incorrect') {
-      this.context.consecutiveFailures += 1;
-      this.context.consecutiveSuccesses = 0;
+      context.consecutiveFailures += 1;
+      context.consecutiveSuccesses = 0;
     } else if (correctness === 'correct') {
-      this.context.consecutiveSuccesses += 1;
-      this.context.consecutiveFailures = 0;
+      context.consecutiveSuccesses += 1;
+      context.consecutiveFailures = 0;
     } else {
       // partial - reset both
-      this.context.consecutiveFailures = 0;
-      this.context.consecutiveSuccesses = 0;
+      context.consecutiveFailures = 0;
+      context.consecutiveSuccesses = 0;
     }
 
     // Calculate next state
-    const { tutorState, hintLevel } = determineNextState(this.context);
-    this.context.tutorState = tutorState;
-    this.context.hintLevel = hintLevel;
+    const { tutorState, hintLevel } = determineNextState(context);
+    context.tutorState = tutorState;
+    context.hintLevel = hintLevel;
   }
 
   /**
-   * Get current context
+   * Get current context for a session
+   * @param sessionId - Session ID
    */
-  getContext(): TutorContext | null {
-    return this.context;
+  getContext(sessionId: string): TutorContext | null {
+    return this.contexts.get(sessionId) || null;
   }
 
   /**
    * Generate a specific level hint
+   * @param sessionId - Session ID
    * @param level - Hint level (1-5)
    */
-  async generateHintAtLevel(level: number): Promise<string> {
-    if (!this.context) {
+  async generateHintAtLevel(sessionId: string, level: number): Promise<string> {
+    const context = this.contexts.get(sessionId);
+    if (!context) {
       throw new Error('Tutor session not initialized');
     }
 
-    return generateHint(this.context, level);
+    return generateHint(context, level);
   }
 
   /**
    * Handle solution reveal request
+   * @param sessionId - Session ID
    */
-  async revealSolution(): Promise<TutorResponse> {
-    if (!this.context) {
+  async revealSolution(sessionId: string): Promise<TutorResponse> {
+    const context = this.contexts.get(sessionId);
+    if (!context) {
       throw new Error('Tutor session not initialized');
     }
 
     // Force explain state
-    this.context.tutorState = 'explain';
-    this.context.hintLevel = 5;
-    this.context.lastEvaluation = {
+    context.tutorState = 'explain';
+    context.hintLevel = 5;
+    context.lastEvaluation = {
       correctness: 'incorrect',
       understandingLevel: 'unknown',
       feedback: 'Student requested solution',
     };
 
-    return generateResponse(this.context);
+    return generateResponse(context);
+  }
+
+  /**
+   * Clear session context
+   * @param sessionId - Session ID
+   */
+  clearSession(sessionId: string): void {
+    this.contexts.delete(sessionId);
   }
 }
 
