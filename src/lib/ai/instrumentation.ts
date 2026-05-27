@@ -24,8 +24,7 @@ export interface ModelCallLog {
 // Cost configuration (USD per 1M tokens)
 const MODEL_COSTS: Record<string, { input: number; output: number }> = {
   'gemini-2.5-flash': { input: 0.075, output: 0.30 },
-  'claude-sonnet': { input: 3.0, output: 15.0 },
-  'claude-sonnet-4': { input: 3.0, output: 15.0 },
+  'claude-sonnet-4-20250514': { input: 3.0, output: 15.0 },
   'gpt-4.1': { input: 2.0, output: 8.0 },
   'o4-mini': { input: 1.5, output: 6.0 },
 };

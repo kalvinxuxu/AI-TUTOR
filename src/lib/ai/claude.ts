@@ -6,6 +6,7 @@
 
 import { anthropic } from '@ai-sdk/anthropic';
 import { generateText } from 'ai';
+import { TUTOR_SYSTEM_PROMPT } from '@/lib/prompts/tutor-system';
 
 // Retry decorator
 async function withRetry<T>(
@@ -77,34 +78,6 @@ export interface TutorResponse {
   isComplete: boolean;
 }
 
-// System prompt for Socratic tutoring
-const TUTOR_SYSTEM_PROMPT = `You are an AI math tutor helping a student learn through Socratic questioning.
-Your primary goal is to guide the student to discover answers themselves rather than giving direct solutions.
-
-CRITICAL RULES (never violate these):
-1. NEVER give complete answers or full solutions directly
-2. Each response should advance only ONE small step
-3. PRIORITIZE questions over explanations
-4. First affirm what the student did correctly, THEN correct mistakes gently
-5. When a student is stuck for multiple turns, you MAY simplify the problem
-6. Keep responses concise - aim for 2-4 sentences maximum
-7. Use encouraging language, never discourage
-
-TUTOR STATE GUIDANCE:
-- "observe": Watch and listen, minimal prompts
-- "hint": Provide gentle guidance, ask clarifying questions
-- "encourage": Affirm progress, motivate continued effort
-- "simplify": Break down into smaller, easier steps
-- "challenge": Push student with slightly harder questions when ready
-- "explain": ONLY use when student explicitly asks or gives up
-
-RESPONSE FORMAT:
-Stay in character as a encouraging tutor. Use questions to guide.
-Example good responses:
-- "Great start! You correctly identified the variable. Now, what comes next in this type of equation?"
-- "I see you multiplied both sides. What's the next step to isolate x?"
-- "You're on the right track. Let me ask: what does a negative coefficient mean for the slope direction?"`;
-
 /**
  * Generate a tutor response based on context
  * @param context - The tutor context with problem info and conversation history
@@ -129,7 +102,7 @@ export async function generateResponse(context: TutorContext): Promise<TutorResp
     // Build the current prompt with state-aware guidance
     const statePrompt = buildStatePrompt(context);
 
-    const { text: responseText } = await withRetry(async () => {
+    const { text: responseText, usage } = await withRetry(async () => {
       return await generateText({
         model: anthropic('claude-sonnet-4-20250514'),
         system: TUTOR_SYSTEM_PROMPT,
@@ -141,6 +114,9 @@ export async function generateResponse(context: TutorContext): Promise<TutorResp
         maxOutputTokens: 512,
       });
     });
+
+    const inputTokens = usage?.inputTokens ?? 0;
+    const outputTokens = usage?.outputTokens ?? 0;
 
     // Check if response violates "no direct answer" rule
     const containsFullSolution = checkForFullSolution(responseText);
@@ -178,10 +154,10 @@ export async function generateResponse(context: TutorContext): Promise<TutorResp
       request_id: requestId,
       user_id: context.userId || '',
       session_id: context.sessionId || '',
-      model_name: 'claude-sonnet-4',
+      model_name: 'claude-sonnet-4-20250514',
       latency_ms: latencyMs,
-      input_tokens: 0,
-      output_tokens: 0,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
       success: true,
       fallback_used: false,
       operation: 'tutor',
@@ -199,7 +175,7 @@ export async function generateResponse(context: TutorContext): Promise<TutorResp
       request_id: requestId,
       user_id: context.userId || '',
       session_id: context.sessionId || '',
-      model_name: 'claude-sonnet-4',
+      model_name: 'claude-sonnet-4-20250514',
       latency_ms: latencyMs,
       input_tokens: 0,
       output_tokens: 0,

@@ -6,6 +6,7 @@
 
 import { openai } from '@ai-sdk/openai';
 import { generateText } from 'ai';
+import { EVALUATION_SYSTEM_PROMPT } from '@/lib/prompts/evaluation-system';
 
 // Retry decorator
 async function withRetry<T>(
@@ -66,40 +67,6 @@ export interface EvaluationResult {
   next_action: 'continue' | 'hint' | 'simplify' | 'explain';
 }
 
-// System prompt for structured evaluation
-const EVALUATION_SYSTEM_PROMPT = `You are an AI evaluation system for student math responses.
-
-Evaluate each student input and return a STRICT JSON object with exactly these fields:
-{
-  "correctness": "correct | partial | incorrect",
-  "understanding_level": "unknown | confused | partial_understanding | "mostly_understood" | "mastered",
-  "primary_error_type": "concept_error | reading_error | formula_misuse | step_skip | calculation_error | sign_error | null",
-  "secondary_error_types": [],
-  "feedback_summary": "20 characters or less brief review",
-  "next_action": "continue | hint | simplify | explain"
-}
-
-CRITICAL RULES:
-1. Only output valid JSON, nothing else
-2. feedback_summary must be 20 characters or less in Chinese
-3. Use the exact enum values as specified
-4. primary_error_type can be null if no clear error
-5. secondary_error_types should contain additional error types if relevant
-
-Error type definitions:
-- concept_error: Fundamental concept misunderstanding
-- reading_error: Misread the problem or conditions
-- formula_misuse: Applied wrong formula or method
-- step_skip: Skipped necessary steps
-- calculation_error: Arithmetic or calculation mistake
-- sign_error: Sign mistakes (+/- confusion)
-
-Next action guidance:
-- continue: Student is on track, keep going
-- hint: Student needs guidance to proceed
-- simplify: Problem is too hard, break it down
-- explain: Student needs explicit explanation`;
-
 /**
  * Evaluate a student's step input
  * @param input - EvaluationInput with problem and student response
@@ -113,13 +80,16 @@ export async function evaluateStep(input: EvaluationInput): Promise<EvaluationRe
 
   try {
     // Try o4-mini first (faster and cheaper)
-    const { text } = await withRetry(async () => {
+    const { text, usage } = await withRetry(async () => {
       return await generateText({
         model: openai('o4-mini'),
         system: EVALUATION_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: buildEvaluationPrompt(input) }],
       });
     });
+
+    const inputTokens = usage?.inputTokens ?? 0;
+    const outputTokens = usage?.outputTokens ?? 0;
 
     // Parse JSON response
     let result = parseEvaluationResponse(text) as EvaluationResult;
@@ -134,8 +104,8 @@ export async function evaluateStep(input: EvaluationInput): Promise<EvaluationRe
       session_id: input.sessionId || '',
       model_name: modelUsed,
       latency_ms: latencyMs,
-      input_tokens: 0,
-      output_tokens: 0,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
       success: true,
       fallback_used: false,
       operation: 'evaluation',
@@ -148,13 +118,16 @@ export async function evaluateStep(input: EvaluationInput): Promise<EvaluationRe
     const startTime2 = Date.now();
 
     try {
-      const { text } = await withRetry(async () => {
+      const { text, usage } = await withRetry(async () => {
         return await generateText({
           model: openai('gpt-4.1'),
           system: EVALUATION_SYSTEM_PROMPT,
           messages: [{ role: 'user', content: buildEvaluationPrompt(input) }],
         });
       });
+
+      const inputTokens = usage?.inputTokens ?? 0;
+      const outputTokens = usage?.outputTokens ?? 0;
 
       let result = parseEvaluationResponse(text) as EvaluationResult;
       result = validateAndEnrichResult(result, input);
@@ -166,8 +139,8 @@ export async function evaluateStep(input: EvaluationInput): Promise<EvaluationRe
         session_id: input.sessionId || '',
         model_name: modelUsed,
         latency_ms: latencyMs,
-        input_tokens: 0,
-        output_tokens: 0,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
         success: true,
         fallback_used: true,
         operation: 'evaluation',

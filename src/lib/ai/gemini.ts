@@ -48,7 +48,7 @@ export async function extractProblemText(imageUrl: string): Promise<OCRResult> {
   let fallbackUsed = false;
 
   try {
-    const { text } = await withRetry(async () => {
+    const { text, usage } = await withRetry(async () => {
       return await generateText({
         model: google('gemini-2.5-flash'),
         messages: [
@@ -85,6 +85,9 @@ Only respond with valid JSON, no additional text.`
       });
     });
 
+    const inputTokens = usage?.inputTokens ?? 0;
+    const outputTokens = usage?.outputTokens ?? 0;
+
     let parsed: Partial<OCRResult> = {};
 
     try {
@@ -116,8 +119,8 @@ Only respond with valid JSON, no additional text.`
       session_id: '',
       model_name: 'gemini-2.5-flash',
       latency_ms: latencyMs,
-      input_tokens: 0,
-      output_tokens: 0,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
       success: true,
       fallback_used: fallbackUsed,
       operation: 'ocr',
@@ -160,7 +163,7 @@ export async function extractProblemTextFromBase64(
   let fallbackUsed = false;
 
   try {
-    const { text } = await withRetry(async () => {
+    const { text, usage } = await withRetry(async () => {
       return await generateText({
         model: google('gemini-2.5-flash'),
         messages: [
@@ -196,6 +199,9 @@ Only respond with valid JSON, no additional text.`
       });
     });
 
+    const inputTokens = usage?.inputTokens ?? 0;
+    const outputTokens = usage?.outputTokens ?? 0;
+
     let parsed: Partial<OCRResult> = {};
 
     try {
@@ -223,8 +229,8 @@ Only respond with valid JSON, no additional text.`
       session_id: '',
       model_name: 'gemini-2.5-flash',
       latency_ms: latencyMs,
-      input_tokens: 0,
-      output_tokens: 0,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
       success: true,
       fallback_used: fallbackUsed,
       operation: 'ocr',
