@@ -17,13 +17,12 @@ const DEV_USER_ID = '00000000-0000-0000-0000-000000000000';
  * Replaces the pseudo x-user-id authentication
  */
 export async function getUserIdFromRequest(request: NextRequest): Promise<string | null> {
-  // Check for x-user-id header first (development bypass)
+  // Check for x-user-id header first (development bypass and MVP mode)
   const devUserId = request.headers.get('x-user-id');
-  const isDevMode = process.env.NODE_ENV === 'development';
 
-  // If Supabase is not configured, fall back to x-user-id header in dev mode
+  // If Supabase is not configured, fall back to x-user-id header
   if (!supabaseUrl || !supabaseAnonKey) {
-    if (isDevMode && devUserId) {
+    if (devUserId) {
       return devUserId;
     }
     console.warn('Supabase not configured, cannot authenticate user');
@@ -37,15 +36,7 @@ export async function getUserIdFromRequest(request: NextRequest): Promise<string
     },
   };
 
-  // Create Supabase SSR client - guard against missing config
-  if (!supabaseUrl || !supabaseAnonKey) {
-    if (isDevMode && devUserId) {
-      return devUserId;
-    }
-    console.warn('Supabase not configured, cannot authenticate user');
-    return null;
-  }
-
+  // Create Supabase SSR client
   const supabase = createServerClient(
     supabaseUrl,
     supabaseAnonKey,
@@ -58,8 +49,8 @@ export async function getUserIdFromRequest(request: NextRequest): Promise<string
   const { data: { user }, error } = await supabase.auth.getUser();
 
   if (error || !user) {
-    // In dev mode, fall back to x-user-id header if Supabase auth fails
-    if (isDevMode && devUserId) {
+    // Fall back to x-user-id header if Supabase auth fails
+    if (devUserId) {
       return devUserId;
     }
     return null;
