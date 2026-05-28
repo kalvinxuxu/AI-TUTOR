@@ -32,6 +32,11 @@ export async function extractProblemTextFromBase64(
   const startTime = Date.now();
   let fallbackUsed = false;
 
+  // Guard: check if Tencent Cloud credentials are configured
+  if (!TENCENTCLOUD_SECRET_ID || !TENCENTCLOUD_SECRET_KEY) {
+    throw new Error('Tencent Cloud OCR credentials not configured. Please set TENCENTCLOUD_SECRET_ID and TENCENTCLOUD_SECRET_KEY environment variables.');
+  }
+
   try {
     const client = new Client({
       credential: {

@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
         error.message.includes('AI') ||
         error.message.includes('Tencent') ||
         error.message.includes('credential') ||
+        error.message.includes('configured') ||
         error.message.includes('network') ||
         error.message.includes('timeout') ||
         error.message.includes('Failed to persist');
