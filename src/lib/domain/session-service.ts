@@ -7,6 +7,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Session, Message, TutorState } from '@/types/domain';
 import { supabase } from '@/lib/supabase/client';
+import { sessionStore, messageStore } from './session-store';
 
 /**
  * Create a new tutoring session
@@ -53,6 +54,9 @@ export async function createSession(userId: string, problemId: string): Promise<
     }
   }
 
+  // Always write to in-memory store (MVP fallback)
+  sessionStore.set(session.id, session);
+
   return session;
 }
 
@@ -84,6 +88,12 @@ export async function getSession(id: string): Promise<Session | null> {
         endedAt: data.ended_at ? new Date(data.ended_at) : null,
       };
     }
+  }
+
+  // Fallback to in-memory store
+  const cached = sessionStore.get(id);
+  if (cached) {
+    return cached;
   }
 
   return null;
@@ -135,6 +145,11 @@ export async function addMessage(
     }
   }
 
+  // Always write to in-memory store (MVP fallback)
+  const existing = messageStore.get(sessionId) ?? [];
+  existing.push(message);
+  messageStore.set(sessionId, existing);
+
   return message;
 }
 
@@ -169,7 +184,8 @@ export async function getMessages(
     }
   }
 
-  return [];
+  // Fallback to in-memory store
+  return messageStore.get(sessionId) ?? [];
 }
 
 /**

@@ -16,6 +16,10 @@ export const EVALUATION_SYSTEM_PROMPT = `You are an AI evaluation system for stu
 Your task is to analyze each student input and provide structured feedback that helps the tutor
 guide the student effectively.
 
+## LANGUAGE REQUIREMENT
+**You MUST respond in Simplified Chinese (简体中文) at all times.**
+- All feedback, evaluation summaries, and next action descriptions must be in Chinese
+
 ## JSON OUTPUT SCHEMA (TDG Section 11.1)
 
 You MUST return a STRICT JSON object with exactly these fields:

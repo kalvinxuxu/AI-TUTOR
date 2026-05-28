@@ -1,12 +1,19 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, Loader2, Image as ImageIcon, CheckCircle, AlertCircle } from "lucide-react";
+import {
+  ChevronLeft,
+  Camera,
+  Image,
+  Upload,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 interface ProblemResult {
@@ -20,7 +27,9 @@ interface ProblemResult {
 
 export default function UploadPage() {
   const router = useRouter();
-  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -28,16 +37,14 @@ export default function UploadPage() {
   const [error, setError] = useState<string | null>(null);
 
   const handleFileSelect = useCallback((file: File) => {
-    // Validate file type
     const validTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
     if (!validTypes.includes(file.type)) {
-      setError("Please select a valid image file (JPEG, PNG, GIF, or WEBP)");
+      setError("请选择有效的图片文件（JPEG、PNG、GIF 或 WEBP）");
       return;
     }
 
-    // Validate file size (10MB max)
     if (file.size > 10 * 1024 * 1024) {
-      setError("Image size must be less than 10MB");
+      setError("图片大小必须小于 10MB");
       return;
     }
 
@@ -45,7 +52,6 @@ export default function UploadPage() {
     setError(null);
     setUploadResult(null);
 
-    // Create preview URL
     const reader = new FileReader();
     reader.onload = (e) => {
       setPreviewUrl(e.target?.result as string);
@@ -53,39 +59,34 @@ export default function UploadPage() {
     reader.readAsDataURL(file);
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
+  const handleFileInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (files && files.length > 0) {
+        handleFileSelect(files[0]);
+      }
+    },
+    [handleFileSelect]
+  );
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      handleFileSelect(files[0]);
+  const handleClearSelection = () => {
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setUploadResult(null);
+    setError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
     }
-  }, [handleFileSelect]);
-
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      handleFileSelect(files[0]);
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = "";
     }
-  }, [handleFileSelect]);
+  };
 
   const handleUpload = async () => {
     if (!selectedFile) return;
 
     setIsUploading(true);
     setError(null);
-    setUploadResult(null);
 
     try {
       const formData = new FormData();
@@ -94,7 +95,7 @@ export default function UploadPage() {
       const response = await fetch("/api/problems", {
         method: "POST",
         headers: {
-          "x-user-id": "demo-user",
+          "x-user-id": "00000000-0000-0000-0000-000000000000",
         },
         body: formData,
       });
@@ -102,12 +103,12 @@ export default function UploadPage() {
       const data = await response.json();
 
       if (!data.success) {
-        throw new Error(data.error || "Failed to upload image");
+        throw new Error(data.error || "图片上传失败");
       }
 
       setUploadResult(data.data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      setError(err instanceof Error ? err.message : "上传失败");
     } finally {
       setIsUploading(false);
     }
@@ -115,175 +116,172 @@ export default function UploadPage() {
 
   const handleStartSession = () => {
     if (uploadResult?.problemId) {
-      router.push(`/session/${uploadResult.problemId}`);
+      router.push(`/problems/${uploadResult.problemId}/confirm`);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white p-8">
-      <div className="max-w-2xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-semibold text-slate-900">Upload Math Problem</h1>
-          <p className="text-slate-600">Take a photo or select an image of your math problem</p>
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+      {/* Header */}
+      <header className="bg-white border-b border-slate-200 px-4 py-3 sticky top-0 z-10">
+        <div className="max-w-2xl mx-auto flex items-center justify-between">
+          <Button variant="ghost" size="icon" onClick={() => router.push("/")}>
+            <ChevronLeft className="w-5 h-5" />
+          </Button>
+          <span className="font-medium text-slate-900">上传题目</span>
+          <Button variant="ghost" size="icon">
+            <span className="text-sm text-slate-500">帮助</span>
+          </Button>
         </div>
+      </header>
 
-        {/* Upload Area */}
-        <Card className={`border-2 border-dashed transition-colors ${
-          isDragging ? "border-primary bg-primary/5" : "border-slate-200"
-        }`}>
-          <CardContent className="p-8">
-            <div
-              className="flex flex-col items-center justify-center space-y-4"
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
+      {/* Main Content */}
+      <main className="max-w-2xl mx-auto px-6 py-8 space-y-6">
+        {/* Upload Actions - Only show when no file selected */}
+        {!selectedFile && (
+          <div className="space-y-4">
+            {/* Camera Upload */}
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handleFileInputChange}
+            />
+            <Button
+              variant="outline"
+              className="w-full h-16 text-base border-slate-200"
+              onClick={() => cameraInputRef.current?.click()}
             >
-              {previewUrl ? (
-                <div className="relative w-full">
-                  <img
-                    src={previewUrl}
-                    alt="Preview"
-                    className="max-h-80 mx-auto rounded-lg object-contain"
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="absolute top-2 right-2"
-                    onClick={() => {
-                      setSelectedFile(null);
-                      setPreviewUrl(null);
-                      setUploadResult(null);
-                      setError(null);
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Upload className="w-8 h-8 text-primary" />
-                  </div>
-                  <div className="text-center">
-                    <p className="text-slate-700 font-medium">
-                      Drag and drop your image here
-                    </p>
-                    <p className="text-sm text-slate-500">or</p>
-                  </div>
-                  <Label
-                    htmlFor="file-input"
-                    className="cursor-pointer inline-flex"
-                  >
-                    Browse Files
-                  </Label>
-                  <Input
-                    id="file-input"
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleInputChange}
-                  />
-                </>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+              <Camera className="w-6 h-6 mr-3 text-slate-600" />
+              <span className="text-slate-700">拍照上传</span>
+            </Button>
 
-        {/* Error Message */}
-        {error && (
-          <div className="flex items-center gap-2 p-4 rounded-lg bg-destructive/10 text-destructive">
-            <AlertCircle className="w-5 h-5" />
-            <span>{error}</span>
+            {/* Gallery Upload */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileInputChange}
+            />
+            <Button
+              variant="outline"
+              className="w-full h-16 text-base border-slate-200"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Image className="w-6 h-6 mr-3 text-slate-600" />
+              <span className="text-slate-700">从相册选择</span>
+            </Button>
           </div>
         )}
 
-        {/* Upload Button */}
-        <div className="flex justify-center">
-          <Button
-            size="lg"
-            onClick={handleUpload}
-            disabled={!selectedFile || isUploading}
-            className="min-w-[200px]"
-          >
-            {isUploading ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Analyzing...
-              </>
-            ) : (
-              <>
-                <ImageIcon className="w-4 h-4 mr-2" />
-                Analyze Image
-              </>
-            )}
-          </Button>
-        </div>
-
-        {/* OCR Result */}
-        {uploadResult && (
-          <Card className="border-2 border-green-200 bg-green-50">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-green-600" />
-                  Problem Analyzed
-                </CardTitle>
-                <Badge variant={uploadResult.confidence > 0.7 ? "default" : "secondary"}>
-                  {Math.round(uploadResult.confidence * 100)}% confidence
-                </Badge>
-              </div>
-              <CardDescription>
-                The AI has extracted and normalized your problem
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* OCR Text */}
-              <div className="space-y-2">
-                <Label className="text-slate-700">Extracted Problem</Label>
-                <div className="p-4 bg-white rounded-lg border border-green-200">
-                  <p className="text-slate-800 whitespace-pre-wrap">{uploadResult.normalizedText}</p>
-                </div>
-              </div>
-
-              {/* Problem Type */}
-              {uploadResult.problemType && (
-                <div className="space-y-2">
-                  <Label className="text-slate-700">Problem Type</Label>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary">{uploadResult.problemType}</Badge>
-                  </div>
-                </div>
-              )}
-
-              {/* Knowledge Points */}
-              {uploadResult.knowledgePoints.length > 0 && (
-                <div className="space-y-2">
-                  <Label className="text-slate-700">Knowledge Points</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {uploadResult.knowledgePoints.map((kp, index) => (
-                      <Badge key={index} variant="outline">
-                        {kp}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Start Session Button */}
-              <div className="pt-4">
+        {/* Preview Area - Only show when file selected */}
+        {selectedFile && (
+          <Card className="border-slate-200">
+            <CardContent className="p-4">
+              <div className="relative">
+                {previewUrl && (
+                  <img
+                    src={previewUrl}
+                    alt="Preview"
+                    className="max-h-64 mx-auto rounded-lg object-contain"
+                  />
+                )}
                 <Button
-                  size="lg"
-                  className="w-full"
-                  onClick={handleStartSession}
+                  variant="outline"
+                  size="icon"
+                  className="absolute top-2 right-2 bg-white/80 hover:bg-white"
+                  onClick={handleClearSelection}
                 >
-                  Start Tutoring Session
+                  <X className="w-4 h-4" />
                 </Button>
               </div>
             </CardContent>
           </Card>
         )}
-      </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="flex items-center gap-2 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* Upload Button */}
+        {selectedFile && !uploadResult && (
+          <div className="flex justify-center">
+            <Button
+              size="lg"
+              onClick={handleUpload}
+              disabled={isUploading}
+              className="min-w-[200px]"
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  识别中...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 mr-2" />
+                  开始识别
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
+        {/* OCR Result */}
+        {uploadResult && (
+          <Card className="border-2 border-green-200 bg-green-50">
+            <CardContent className="p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <span className="font-medium text-green-800">识别成功</span>
+                </div>
+                <Badge
+                  variant={uploadResult.confidence > 0.7 ? "secondary" : "outline"}
+                  className={
+                    uploadResult.confidence <= 0.7
+                      ? "bg-amber-100 text-amber-700 border-amber-200"
+                      : ""
+                  }
+                >
+                  置信度 {Math.round(uploadResult.confidence * 100)}%
+                </Badge>
+              </div>
+
+              {/* Extracted Text */}
+              <div className="p-3 bg-white rounded-lg border border-green-200">
+                <p className="text-slate-800 whitespace-pre-wrap text-sm leading-relaxed">
+                  {uploadResult.normalizedText}
+                </p>
+              </div>
+
+              {/* Start Session Button */}
+              <Button size="lg" className="w-full" onClick={handleStartSession}>
+                开始做题
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Upload Tips - Only show when no file selected */}
+        {!selectedFile && (
+          <div className="text-sm text-slate-500 space-y-1 px-2">
+            <p className="font-medium text-slate-700 mb-2">温馨提示：</p>
+            <ul className="space-y-1 list-disc list-inside">
+              <li>尽量只拍一道题</li>
+              <li>保持画面清晰</li>
+              <li>支持截图上传</li>
+            </ul>
+          </div>
+        )}
+      </main>
     </div>
   );
 }

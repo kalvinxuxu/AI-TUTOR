@@ -35,7 +35,11 @@ export default function HistoryPage() {
   useEffect(() => {
     const fetchSessions = async () => {
       try {
-        const response = await fetch('/api/sessions');
+        const response = await fetch('/api/sessions', {
+          headers: {
+            'x-user-id': '00000000-0000-0000-0000-000000000000',
+          },
+        });
         const data = await response.json();
 
         if (data.success && data.data) {

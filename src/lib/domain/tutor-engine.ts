@@ -5,7 +5,7 @@
  */
 
 import { TutorState, TutorContext, TutorResponse, Correctness, UnderstandingLevel } from '@/types/domain';
-import { generateResponse, generateInitialMessage, generateHint } from '@/lib/ai/claude';
+import { generateResponse, generateInitialMessage, generateHint } from '@/lib/ai/deepseek';
 
 /**
  * Hint level definitions per TDG Section 10.3

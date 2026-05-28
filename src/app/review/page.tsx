@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
-  Calendar,
+  ChevronLeft,
   CheckCircle,
   SkipForward,
   Loader2,
   AlertCircle,
-  Filter,
+  Calendar,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,7 +25,7 @@ interface ReviewTask {
 
 const errorTypeLabels: Record<string, string> = {
   concept_error: "概念错误",
-  reading_error: "阅读错误",
+  reading_error: "审题错误",
   formula_misuse: "公式误用",
   step_skip: "跳步",
   calculation_error: "计算错误",
@@ -31,17 +33,15 @@ const errorTypeLabels: Record<string, string> = {
 };
 
 export default function ReviewPage() {
+  const router = useRouter();
   const [tasks, setTasks] = useState<ReviewTask[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "pending" | "completed" | "skipped">("pending");
-  const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const fetchTasks = useCallback(async () => {
     setIsLoading(true);
     try {
-      const statusParam = filter === "all" ? "" : `?status=${filter}`;
-      const response = await fetch(`/api/review/tasks${statusParam}`, {
+      const response = await fetch("/api/review/tasks?status=pending", {
         headers: { "x-user-id": "demo-user" },
       });
 
@@ -49,15 +49,13 @@ export default function ReviewPage() {
 
       if (data.success) {
         setTasks(data.data.tasks);
-      } else {
-        setError(data.error || "Failed to load review tasks");
       }
     } catch {
-      setError("Failed to connect to server");
+      // Silently handle
     } finally {
       setIsLoading(false);
     }
-  }, [filter]);
+  }, []);
 
   useEffect(() => {
     fetchTasks();
@@ -66,17 +64,24 @@ export default function ReviewPage() {
   const handleMarkComplete = async (taskId: string) => {
     setActionLoading(taskId);
     try {
-      // In production, this would call PATCH /api/review/tasks/[id]
-      // For MVP, we simulate the action
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const response = await fetch(`/api/review/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': 'demo-user',
+        },
+        body: JSON.stringify({ action: 'complete' }),
+      });
 
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === taskId ? { ...t, status: "completed" as const } : t
-        )
-      );
+      if (response.ok) {
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === taskId ? { ...t, status: 'completed' as const } : t
+          )
+        );
+      }
     } catch {
-      setError("Failed to update task");
+      // Handle error silently
     } finally {
       setActionLoading(null);
     }
@@ -85,16 +90,24 @@ export default function ReviewPage() {
   const handleSkip = async (taskId: string) => {
     setActionLoading(taskId);
     try {
-      // In production, this would call PATCH /api/review/tasks/[id]
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const response = await fetch(`/api/review/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': 'demo-user',
+        },
+        body: JSON.stringify({ action: 'skip' }),
+      });
 
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === taskId ? { ...t, status: "skipped" as const } : t
-        )
-      );
+      if (response.ok) {
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === taskId ? { ...t, status: 'skipped' as const } : t
+          )
+        );
+      }
     } catch {
-      setError("Failed to skip task");
+      // Handle error silently
     } finally {
       setActionLoading(null);
     }
@@ -103,89 +116,54 @@ export default function ReviewPage() {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
-    const diffDays = Math.floor((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    const diffDays = Math.floor(
+      (date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+    );
 
-    if (diffDays === 0) return "Today";
-    if (diffDays === 1) return "Tomorrow";
-    if (diffDays === -1) return "Yesterday";
+    if (diffDays === 0) return "今天";
+    if (diffDays === 1) return "明天";
+    if (diffDays === -1) return "昨天";
 
-    return new Intl.DateTimeFormat("en-US", {
+    return new Intl.DateTimeFormat("zh-CN", {
       month: "short",
       day: "numeric",
-      year: diffDays > 365 || diffDays < -365 ? "numeric" : undefined,
     }).format(date);
   };
 
-  const getDateColor = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffDays = Math.floor((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (diffDays < 0) return "text-red-600 bg-red-100 border-red-200";
-    if (diffDays === 0) return "text-amber-600 bg-amber-100 border-amber-200";
-    return "text-slate-600 bg-slate-100 border-slate-200";
-  };
+  const pendingCount = tasks.filter((t) => t.status === "pending").length;
+  const completedCount = tasks.filter((t) => t.status === "completed").length;
+  const totalCount = tasks.length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white p-8">
-      <div className="max-w-4xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-semibold text-slate-900">Review Tasks</h1>
-            <p className="text-slate-600 mt-1">Master your weak areas through spaced repetition</p>
-          </div>
-          <Badge variant="secondary" className="text-sm px-3 py-1">
-            {tasks.filter((t) => t.status === "pending").length} pending
-          </Badge>
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+      {/* Header */}
+      <header className="bg-white border-b border-slate-200 px-4 py-3 sticky top-0 z-10">
+        <div className="max-w-2xl mx-auto flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => router.push("/")}>
+            <ChevronLeft className="w-5 h-5" />
+          </Button>
+          <span className="font-medium text-slate-900">今日复习</span>
         </div>
+      </header>
 
-        {/* Filters */}
+      {/* Main Content */}
+      <main className="max-w-2xl mx-auto px-6 py-6 space-y-6">
+        {/* Summary Card */}
         <Card className="border-slate-200">
           <CardContent className="p-4">
-            <div className="flex items-center gap-4">
-              <Filter className="w-4 h-4 text-slate-500" />
-              <div className="flex gap-1">
-                <Button
-                  variant={filter === "pending" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setFilter("pending")}
-                >
-                  Pending
-                </Button>
-                <Button
-                  variant={filter === "completed" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setFilter("completed")}
-                >
-                  Completed
-                </Button>
-                <Button
-                  variant={filter === "skipped" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setFilter("skipped")}
-                >
-                  Skipped
-                </Button>
-                <Button
-                  variant={filter === "all" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setFilter("all")}
-                >
-                  All
-                </Button>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-slate-500">今日共 {totalCount} 个任务</div>
+                <div className="text-lg font-semibold text-slate-900 mt-1">
+                  已完成 {completedCount} / {totalCount}
+                </div>
+              </div>
+              <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
+                <Clock className="w-6 h-6 text-amber-600" />
               </div>
             </div>
           </CardContent>
         </Card>
-
-        {/* Error Message */}
-        {error && (
-          <div className="p-4 rounded-lg bg-red-100 text-red-700 border border-red-200 flex items-center gap-2">
-            <AlertCircle className="w-5 h-5" />
-            {error}
-          </div>
-        )}
 
         {/* Task List */}
         {isLoading ? (
@@ -194,54 +172,50 @@ export default function ReviewPage() {
           </div>
         ) : tasks.length === 0 ? (
           <Card className="border-slate-200">
-            <CardContent className="p-12 text-center">
+            <CardContent className="p-8 text-center">
               <CheckCircle className="w-12 h-12 mx-auto text-slate-300 mb-4" />
-              <h3 className="text-lg font-medium text-slate-700">
-                {filter === "pending"
-                  ? "No pending review tasks"
-                  : `No ${filter} tasks`}
-              </h3>
-              <p className="text-slate-500 mt-1">
-                {filter === "pending"
-                  ? "Great job! Check back later for new tasks."
-                  : "Try a different filter to see more tasks."}
+              <h3 className="text-lg font-medium text-slate-700">暂无复习任务</h3>
+              <p className="text-slate-500 mt-1 text-sm">
+                完成一些题目后，这里会出现复习任务
               </p>
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {tasks.map((task) => (
-              <Card key={task.id} className="border-slate-200">
-                <CardContent className="p-6">
+              <Card
+                key={task.id}
+                className={`border-slate-200 ${
+                  task.status === "completed"
+                    ? "bg-green-50 border-green-200"
+                    : task.status === "skipped"
+                    ? "bg-slate-50 border-slate-200 opacity-60"
+                    : ""
+                }`}
+              >
+                <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-4">
                     {/* Task Info */}
-                    <div className="flex-1 space-y-3">
+                    <div className="flex-1 space-y-2">
                       {/* Knowledge Point */}
-                      <div>
-                        <Badge variant="secondary" className="text-sm">
-                          {task.knowledgePoint}
-                        </Badge>
-                      </div>
+                      <Badge variant="secondary" className="text-sm">
+                        {task.knowledgePoint}
+                      </Badge>
 
                       {/* Error Type */}
                       {task.errorType && (
-                        <div className="flex items-center gap-2 text-sm text-slate-600">
-                          <span className="font-medium">Error Type:</span>
-                          <Badge variant="outline" className="text-xs">
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-slate-500">错因：</span>
+                          <Badge variant="outline" className="text-xs text-amber-600 border-amber-200">
                             {errorTypeLabels[task.errorType] || task.errorType}
                           </Badge>
                         </div>
                       )}
 
                       {/* Scheduled Date */}
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-slate-400" />
-                        <Badge
-                          variant="outline"
-                          className={`text-xs ${getDateColor(task.scheduledFor)}`}
-                        >
-                          {formatDate(task.scheduledFor)}
-                        </Badge>
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                        <Calendar className="w-3.5 h-3.5" />
+                        {formatDate(task.scheduledFor)}
                       </div>
                     </div>
 
@@ -253,13 +227,14 @@ export default function ReviewPage() {
                             size="sm"
                             onClick={() => handleMarkComplete(task.id)}
                             disabled={actionLoading === task.id}
+                            className="bg-green-600 hover:bg-green-700"
                           >
                             {actionLoading === task.id ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
                               <>
                                 <CheckCircle className="w-4 h-4 mr-1" />
-                                Complete
+                                完成
                               </>
                             )}
                           </Button>
@@ -268,22 +243,23 @@ export default function ReviewPage() {
                             size="sm"
                             onClick={() => handleSkip(task.id)}
                             disabled={actionLoading === task.id}
+                            className="text-xs"
                           >
-                            <SkipForward className="w-4 h-4 mr-1" />
-                            Skip
+                            <SkipForward className="w-3.5 h-3.5 mr-1" />
+                            跳过
                           </Button>
                         </>
                       )}
                       {task.status === "completed" && (
-                        <Badge variant="default" className="bg-green-100 text-green-700 border-green-200">
+                        <Badge className="bg-green-100 text-green-700 border-green-200">
                           <CheckCircle className="w-3 h-3 mr-1" />
-                          Completed
+                          已完成
                         </Badge>
                       )}
                       {task.status === "skipped" && (
                         <Badge variant="secondary" className="bg-amber-100 text-amber-700 border-amber-200">
                           <SkipForward className="w-3 h-3 mr-1" />
-                          Skipped
+                          已跳过
                         </Badge>
                       )}
                     </div>
@@ -293,7 +269,20 @@ export default function ReviewPage() {
             ))}
           </div>
         )}
-      </div>
+
+        {/* Action Button */}
+        {!isLoading && tasks.length > 0 && (
+          <div className="pt-4">
+            <Button
+              size="lg"
+              className="w-full"
+              onClick={() => router.push("/upload")}
+            >
+              开始新题目
+            </Button>
+          </div>
+        )}
+      </main>
     </div>
   );
 }

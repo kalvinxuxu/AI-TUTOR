@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { problemService } from '@/lib/domain/problem-service';
+import { getUserIdFromRequest } from '@/lib/auth';
 
 // Validation schema per TDG Section 16.3
 const imageValidationSchema = z.object({
@@ -16,23 +17,11 @@ const imageValidationSchema = z.object({
     }, 'Image size must be less than 10MB'),
 });
 
-// Helper to get user ID (simplified - would use real auth in production)
-function getUserId(request: NextRequest): string | null {
-  // Check header first
-  const userIdHeader = request.headers.get('x-user-id');
-  if (userIdHeader) return userIdHeader;
-
-  // Check cookie
-  const cookies = request.cookies.getAll();
-  const userIdCookie = cookies.find((c) => c.name === 'user_id');
-  return userIdCookie?.value || null;
-}
-
 // POST /api/problems - Create new problem from image
 export async function POST(request: NextRequest) {
   try {
     // Get user ID
-    const userId = getUserId(request);
+    const userId = await getUserIdFromRequest(request);
     if (!userId) {
       return NextResponse.json(
         { success: false, error: 'Authentication required' },
@@ -99,12 +88,23 @@ export async function POST(request: NextRequest) {
     console.error('Error creating problem:', error);
 
     // Fallback and degradation per TDG Section 13
+    // Return 503 for OCR-related errors (most errors here are from Tencent OCR)
     if (error instanceof Error) {
-      if (error.message.includes('OCR') || error.message.includes('AI')) {
+      const isOcrError =
+        error.message.includes('OCR') ||
+        error.message.includes('AI') ||
+        error.message.includes('Tencent') ||
+        error.message.includes('credential') ||
+        error.message.includes('network') ||
+        error.message.includes('timeout') ||
+        error.message.includes('Failed to persist');
+
+      if (isOcrError) {
         return NextResponse.json(
           {
             success: false,
             error: 'Problem analysis temporarily unavailable. Please try again.',
+            detail: error.message,
           },
           { status: 503 }
         );
@@ -112,7 +112,11 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { success: false, error: 'Failed to process problem' },
+      {
+        success: false,
+        error: 'Failed to process problem',
+        detail: error instanceof Error ? error.message : String(error),
+      },
       { status: 500 }
     );
   }

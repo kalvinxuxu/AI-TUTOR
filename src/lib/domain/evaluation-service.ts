@@ -15,6 +15,7 @@ import {
 } from '@/types/domain';
 import { supabase } from '@/lib/supabase/client';
 import { EVALUATION_SYSTEM_PROMPT } from '@/lib/prompts/evaluation-system';
+import { deepseekAdapter } from '@/lib/ai/deepseek';
 
 /**
  * Evaluation service for analyzing student responses
@@ -32,7 +33,7 @@ export class EvaluationService {
     studentInput: string,
     problemText: string
   ): Promise<EvaluationResult> {
-    const evaluation = await callEvaluationModel(studentInput, problemText);
+    const evaluation = await callEvaluationModel(sessionId, studentInput, problemText);
 
     // Persist evaluation record
     await this.persistEvaluation(sessionId, studentInput, evaluation);
@@ -134,53 +135,24 @@ export class EvaluationService {
 }
 
 /**
- * Call the evaluation model (Claude) for structured evaluation
+ * Call the evaluation model (DeepSeek) for structured evaluation
  * Returns parsed EvaluationResult
  */
 async function callEvaluationModel(
+  sessionId: string,
   studentInput: string,
   problemText: string
 ): Promise<EvaluationResult> {
-  // Dynamic import to avoid circular dependency issues
-  const { generateText } = await import('ai');
-  const { anthropic } = await import('@ai-sdk/anthropic');
-
-  const prompt = buildEvaluationPrompt(studentInput, problemText);
-
-  const { text } = await generateText({
-    model: anthropic('claude-sonnet-4-20250514'),
-    system: EVALUATION_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: prompt }],
-    maxOutputTokens: 256,
-  });
-
-  // Parse JSON response
-  let parsed: Partial<EvaluationResult> = {};
-
-  try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      parsed = JSON.parse(jsonMatch[0]);
-    }
-  } catch {
-    // Fallback if JSON parsing fails
-    return {
-      correctness: 'partial' as Correctness,
-      understandingLevel: 'partial_understanding' as UnderstandingLevel,
-      primaryErrorType: null,
-      secondaryErrorTypes: [],
-      feedbackSummary: '需要更多反馈',
-      nextAction: 'hint' as NextAction,
-    };
-  }
+  // Use DeepSeek adapter for structured evaluation (per TDG Section 4.3)
+  const result = await deepseekAdapter.evaluateStep(sessionId, studentInput, problemText);
 
   return {
-    correctness: (parsed.correctness as Correctness) || 'partial',
-    understandingLevel: (parsed.understandingLevel as UnderstandingLevel) || 'partial_understanding',
-    primaryErrorType: parsed.primaryErrorType as ErrorType | null,
-    secondaryErrorTypes: (parsed.secondaryErrorTypes as ErrorType[]) || [],
-    feedbackSummary: (parsed.feedbackSummary || '继续努力').substring(0, 20),
-    nextAction: (parsed.nextAction as NextAction) || 'hint',
+    correctness: result.correctness as Correctness,
+    understandingLevel: result.understandingLevel as UnderstandingLevel,
+    primaryErrorType: result.primaryErrorType as ErrorType | null,
+    secondaryErrorTypes: result.secondaryErrorTypes as ErrorType[],
+    feedbackSummary: result.feedbackSummary.substring(0, 20),
+    nextAction: result.nextAction as NextAction,
   };
 }
 

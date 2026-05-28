@@ -17,6 +17,15 @@ interface ReviewTrigger {
 }
 
 /**
+ * Fixed review intervals per TDG Section 12.2
+ * - Day 0 (immediate)
+ * - Day 2
+ * - Day 7
+ * - Day 21
+ */
+const REVIEW_INTERVALS = [0, 2, 7, 21];
+
+/**
  * Review Service class for managing review tasks
  */
 export class ReviewService {
@@ -49,7 +58,7 @@ export class ReviewService {
     // Rule 3: If understanding_level = unknown and enters explain
     if (understandingLevel === 'unknown' && tutorState === 'explain') {
       for (const kp of knowledgePoints) {
-        const task = await this.createReviewTask(
+        const newTasks = await this.createReviewTask(
           userId,
           sessionId,
           problemId,
@@ -57,7 +66,7 @@ export class ReviewService {
           null,
           'explain_trigger'
         );
-        if (task) tasks.push(task);
+        tasks.push(...newTasks);
       }
     }
 
@@ -67,7 +76,7 @@ export class ReviewService {
       if (recentCount >= 2) {
         const dedupeKey = `error:${errorType}`;
         if (this.canCreateTask(dedupeKey)) {
-          const task = await this.createReviewTask(
+          const newTasks = await this.createReviewTask(
             userId,
             sessionId,
             problemId,
@@ -75,7 +84,7 @@ export class ReviewService {
             errorType,
             'error_type'
           );
-          if (task) tasks.push(task);
+          tasks.push(...newTasks);
         }
       }
     }
@@ -85,7 +94,7 @@ export class ReviewService {
       if (recentCount >= 2) {
         const dedupeKey = `kp:${kp}`;
         if (this.canCreateTask(dedupeKey)) {
-          const task = await this.createReviewTask(
+          const newTasks = await this.createReviewTask(
             userId,
             sessionId,
             problemId,
@@ -93,7 +102,7 @@ export class ReviewService {
             null,
             'knowledge_point'
           );
-          if (task) tasks.push(task);
+          tasks.push(...newTasks);
         }
       }
     }
@@ -102,14 +111,9 @@ export class ReviewService {
   }
 
   /**
-   * Create a single review task
-   * @param userId - User ID
-   * @param sessionId - Session ID
-   * @param problemId - Problem ID
-   * @param knowledgePoint - Knowledge point (if applicable)
-   * @param errorType - Error type (if applicable)
-   * @param triggerType - What triggered this review
-   * @returns Created ReviewTask or null if deduplicated
+   * Create review tasks at fixed intervals (0, 2, 7, 21 days)
+   * Ref: TDG Section 12.2 - Fixed Review Intervals
+   * @returns Array of created ReviewTask records
    */
   private async createReviewTask(
     userId: string,
@@ -118,64 +122,69 @@ export class ReviewService {
     knowledgePoint: string | null,
     errorType: string | null,
     triggerType: string
-  ): Promise<ReviewTask | null> {
-    // Build dedupe key
+  ): Promise<ReviewTask[]> {
+    const tasks: ReviewTask[] = [];
     const dedupeKey = knowledgePoint
       ? `kp:${knowledgePoint}`
       : `err:${errorType}`;
 
     // Check in-memory deduplication
     if (!this.canCreateTask(dedupeKey)) {
-      return null;
+      return [];
     }
 
     // Check database deduplication (avoid same task in 7 days)
     if (await this.hasRecentTask(userId, dedupeKey, 7)) {
-      return null;
+      return [];
     }
 
-    // Schedule for review in 1-3 days (simplified spaced review)
-    const scheduledFor = new Date();
-    scheduledFor.setDate(scheduledFor.getDate() + this.getRandomReviewDelay());
-
-    const taskId = uuidv4();
     const now = new Date();
 
-    const task: ReviewTask = {
-      id: taskId,
-      userId,
-      sessionId,
-      problemId,
-      knowledgePoint: knowledgePoint || '',
-      errorType: errorType || null,
-      scheduledFor,
-      status: 'pending',
-      dedupeKey,
-      createdAt: now,
-      completedAt: null,
-    };
+    // Create tasks for each fixed interval (0, 2, 7, 21 days)
+    for (const days of REVIEW_INTERVALS) {
+      const scheduledFor = new Date();
+      scheduledFor.setDate(scheduledFor.getDate() + days);
 
-    // Persist to database
-    if (supabase) {
-      await supabase.from('review_tasks').insert({
-        id: task.id,
-        user_id: task.userId,
-        session_id: task.sessionId,
-        problem_id: task.problemId,
-        knowledge_point: task.knowledgePoint,
-        error_type: task.errorType,
-        scheduled_for: task.scheduledFor.toISOString(),
-        status: task.status,
-        dedupe_key: task.dedupeKey,
-        created_at: task.createdAt.toISOString(),
-        completed_at: null,
-      });
+      const taskId = uuidv4();
+
+      const task: ReviewTask = {
+        id: taskId,
+        userId,
+        sessionId,
+        problemId,
+        knowledgePoint: knowledgePoint || '',
+        errorType: errorType || null,
+        scheduledFor,
+        status: 'pending',
+        dedupeKey: `${dedupeKey}:${days}`, // Include interval in dedupe key
+        createdAt: now,
+        completedAt: null,
+      };
+
+      // Persist to database
+      if (supabase) {
+        await supabase.from('review_tasks').insert({
+          id: task.id,
+          user_id: task.userId,
+          session_id: task.sessionId,
+          problem_id: task.problemId,
+          knowledge_point: task.knowledgePoint,
+          error_type: task.errorType,
+          scheduled_for: task.scheduledFor.toISOString(),
+          status: task.status,
+          dedupe_key: task.dedupeKey,
+          created_at: task.createdAt.toISOString(),
+          completed_at: null,
+        });
+      }
+
+      tasks.push(task);
     }
 
     // Track in memory
     this.recentTaskKeys.set(dedupeKey, Date.now());
 
-    return task;
+    return tasks;
   }
 
   /**
@@ -187,13 +196,6 @@ export class ReviewService {
       return false;
     }
     return true;
-  }
-
-  /**
-   * Get random review delay (1-3 days)
-   */
-  private getRandomReviewDelay(): number {
-    return Math.floor(Math.random() * 3) + 1;
   }
 
   /**
@@ -221,7 +223,8 @@ export class ReviewService {
   }
 
   /**
-   * Count recent errors by error type for a user
+   * Count recent errors by error type for a specific user
+   * Joins step_evaluations with sessions to filter by user_id
    */
   private async countRecentErrors(
     userId: string,
@@ -233,39 +236,63 @@ export class ReviewService {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysAgo);
 
-    // Count from step_evaluations joined with sessions
+    // First get the user's sessions within the cutoff period
+    const { data: userSessions } = await supabase
+      .from('sessions')
+      .select('id')
+      .eq('user_id', userId)
+      .gte('created_at', cutoffDate.toISOString());
+
+    if (!userSessions || userSessions.length === 0) {
+      return 0;
+    }
+
+    const sessionIds = userSessions.map(s => s.id);
+
+    // Then count step_evaluations for those sessions with the given error type
     const { count } = await supabase
       .from('step_evaluations')
       .select('*', { count: 'exact', head: true })
       .eq('primary_error_type', errorType)
-      .gte('created_at', cutoffDate.toISOString());
+      .in('session_id', sessionIds);
 
-    // Note: In production, would join with sessions table to filter by user
-    // For now, return 0 as we don't have user context in step_evaluations directly
     return count || 0;
   }
 
   /**
-   * Count recent errors by knowledge point
+   * Count recent errors by knowledge point for a specific user
+   * Joins through sessions -> problems to get KP info
    */
   private async countRecentErrorsByKP(
     userId: string,
     knowledgePoint: string,
     daysAgo: number
   ): Promise<number> {
-    // In production, this would query through sessions->problems to get KP info
-    // Simplified implementation
     if (!supabase) return 0;
 
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysAgo);
 
-    // Check review_tasks for this knowledge point
+    // First get the user's sessions within the cutoff period
+    const { data: userSessions } = await supabase
+      .from('sessions')
+      .select('id')
+      .eq('user_id', userId)
+      .gte('created_at', cutoffDate.toISOString());
+
+    if (!userSessions || userSessions.length === 0) {
+      return 0;
+    }
+
+    const sessionIds = userSessions.map(s => s.id);
+
+    // Count review_tasks for this knowledge point and user
     const { data } = await supabase
       .from('review_tasks')
       .select('id')
       .eq('user_id', userId)
       .eq('knowledge_point', knowledgePoint)
+      .in('session_id', sessionIds)
       .gte('created_at', cutoffDate.toISOString());
 
     return data?.length || 0;

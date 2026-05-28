@@ -4,27 +4,18 @@ import { sessionService } from '@/lib/domain/session-service';
 import { problemService } from '@/lib/domain/problem-service';
 import { tutorEngine } from '@/lib/domain/tutor-engine';
 import { TutorState } from '@/types/domain';
+import { getUserIdFromRequest } from '@/lib/auth';
 
 // Validation schema
 const startSessionSchema = z.object({
   problemId: z.string().min(1, 'Problem ID is required'),
 });
 
-// Helper to get user ID (simplified - would use real auth in production)
-function getUserId(request: NextRequest): string | null {
-  const userIdHeader = request.headers.get('x-user-id');
-  if (userIdHeader) return userIdHeader;
-
-  const cookies = request.cookies.getAll();
-  const userIdCookie = cookies.find((c) => c.name === 'user_id');
-  return userIdCookie?.value || null;
-}
-
 // POST /api/sessions/start - Start a new tutoring session
 export async function POST(request: NextRequest) {
   try {
     // Get user ID
-    const userId = getUserId(request);
+    const userId = await getUserIdFromRequest(request);
     if (!userId) {
       return NextResponse.json(
         { success: false, error: 'Authentication required' },

@@ -42,8 +42,8 @@ describe('Review Service - Deduplication', () => {
       const originalHasRecentTask = reviewService['hasRecentTask'];
       reviewService['hasRecentTask'] = async () => false;
 
-      // Create first task
-      const task1 = await reviewService['createReviewTask'](
+      // Create first task (returns array of 4 tasks at intervals [0,2,7,21])
+      const tasks1 = await reviewService['createReviewTask'](
         userId,
         sessionId,
         problemId,
@@ -52,11 +52,11 @@ describe('Review Service - Deduplication', () => {
         'knowledge_point'
       );
 
-      expect(task1).not.toBeNull();
-      expect(task1?.knowledgePoint).toBe(knowledgePoint);
+      expect(tasks1).toHaveLength(4);
+      expect(tasks1[0]?.knowledgePoint).toBe(knowledgePoint);
 
       // Try to create duplicate within 24 hours
-      const task2 = await reviewService['createReviewTask'](
+      const tasks2 = await reviewService['createReviewTask'](
         userId,
         sessionId,
         problemId,
@@ -65,8 +65,8 @@ describe('Review Service - Deduplication', () => {
         'knowledge_point'
       );
 
-      // Should be blocked by in-memory deduplication
-      expect(task2).toBeNull();
+      // Should be blocked by in-memory deduplication (returns empty array)
+      expect(tasks2).toEqual([]);
 
       // Restore original method
       reviewService['hasRecentTask'] = originalHasRecentTask;
@@ -99,8 +99,8 @@ describe('Review Service - Deduplication', () => {
       const originalHasRecentTask = reviewService['hasRecentTask'];
       reviewService['hasRecentTask'] = async () => false;
 
-      // Create first task
-      const task1 = await reviewService['createReviewTask'](
+      // Create first task (returns array of 4 tasks at intervals [0,2,7,21])
+      const tasks1 = await reviewService['createReviewTask'](
         userId,
         sessionId,
         problemId,
@@ -109,10 +109,10 @@ describe('Review Service - Deduplication', () => {
         'knowledge_point'
       );
 
-      expect(task1).not.toBeNull();
+      expect(tasks1).toHaveLength(4);
 
-      // Second task should be blocked by in-memory dedupe
-      const task2 = await reviewService['createReviewTask'](
+      // Second task should be blocked by in-memory dedupe (returns empty array)
+      const tasks2 = await reviewService['createReviewTask'](
         userId,
         sessionId,
         problemId,
@@ -121,7 +121,7 @@ describe('Review Service - Deduplication', () => {
         'knowledge_point'
       );
 
-      expect(task2).toBeNull();
+      expect(tasks2).toEqual([]);
 
       // Restore
       reviewService['hasRecentTask'] = originalHasRecentTask;
@@ -139,8 +139,8 @@ describe('Review Service - Deduplication', () => {
       const originalHasRecentTask = reviewService['hasRecentTask'];
       reviewService['hasRecentTask'] = async () => false;
 
-      // Create first task
-      const task1 = await reviewService['createReviewTask'](
+      // Create first task (returns array of 4 tasks at intervals [0,2,7,21])
+      const tasks1 = await reviewService['createReviewTask'](
         userId,
         sessionId,
         problemId,
@@ -149,8 +149,8 @@ describe('Review Service - Deduplication', () => {
         'error_type'
       );
 
-      expect(task1).not.toBeNull();
-      expect(task1?.errorType).toBe(errorType);
+      expect(tasks1).toHaveLength(4);
+      expect(tasks1[0]?.errorType).toBe(errorType);
 
       // Restore
       reviewService['hasRecentTask'] = originalHasRecentTask;
@@ -167,8 +167,8 @@ describe('Review Service - Deduplication', () => {
       const originalHasRecentTask = reviewService['hasRecentTask'];
       reviewService['hasRecentTask'] = async () => false;
 
-      // Create task for first knowledge point
-      const task1 = await reviewService['createReviewTask'](
+      // Create task for first knowledge point (returns array of 4 tasks)
+      const tasks1 = await reviewService['createReviewTask'](
         userId,
         sessionId,
         problemId,
@@ -180,8 +180,8 @@ describe('Review Service - Deduplication', () => {
       // Clear in-memory tracking for a different KP
       reviewService['recentTaskKeys'].set('kp:knowledge_point_b', 0);
 
-      // Create task for second knowledge point
-      const task2 = await reviewService['createReviewTask'](
+      // Create task for second knowledge point (returns array of 4 tasks)
+      const tasks2 = await reviewService['createReviewTask'](
         userId,
         sessionId,
         problemId,
@@ -190,10 +190,10 @@ describe('Review Service - Deduplication', () => {
         'knowledge_point'
       );
 
-      expect(task1).not.toBeNull();
-      expect(task2).not.toBeNull();
-      expect(task1?.knowledgePoint).toBe('knowledge_point_a');
-      expect(task2?.knowledgePoint).toBe('knowledge_point_b');
+      expect(tasks1).toHaveLength(4);
+      expect(tasks2).toHaveLength(4);
+      expect(tasks1[0]?.knowledgePoint).toBe('knowledge_point_a');
+      expect(tasks2[0]?.knowledgePoint).toBe('knowledge_point_b');
 
       // Restore
       reviewService['hasRecentTask'] = originalHasRecentTask;
@@ -210,7 +210,8 @@ describe('Review Service - Deduplication', () => {
       const originalHasRecentTask = reviewService['hasRecentTask'];
       reviewService['hasRecentTask'] = async () => false;
 
-      const task = await reviewService['createReviewTask'](
+      // createReviewTask returns array of 4 tasks at intervals [0,2,7,21]
+      const tasks = await reviewService['createReviewTask'](
         userId,
         sessionId,
         problemId,
@@ -218,6 +219,9 @@ describe('Review Service - Deduplication', () => {
         null,
         'knowledge_point'
       );
+
+      expect(tasks).toHaveLength(4);
+      const task = tasks[0];
 
       expect(task).toMatchObject({
         id: expect.any(String),
@@ -227,7 +231,7 @@ describe('Review Service - Deduplication', () => {
         knowledgePoint: 'test_kp',
         errorType: null,
         status: 'pending',
-        dedupeKey: 'kp:test_kp',
+        dedupeKey: expect.stringMatching(/^kp:test_kp:\d+$/), // includes interval suffix
         createdAt: expect.any(Date),
         completedAt: null,
       });

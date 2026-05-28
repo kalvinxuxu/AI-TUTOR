@@ -152,21 +152,53 @@ export class ProfileService {
     const weakKP = new Map<string, number>();
     const frequentET = new Map<string, number>();
 
-    // Aggregate weak knowledge points from review tasks
+    // Aggregate weak knowledge points from step_evaluations via sessions/problems join
     if (supabase) {
-      const { data: reviewTasks } = await supabase
-        .from('review_tasks')
-        .select('knowledge_point, error_type')
-        .eq('user_id', userId)
-        .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - 30);
 
-      if (reviewTasks) {
-        for (const task of reviewTasks) {
-          if (task.knowledge_point) {
-            weakKP.set(task.knowledge_point, (weakKP.get(task.knowledge_point) || 0) + 1);
-          }
-          if (task.error_type) {
-            frequentET.set(task.error_type, (frequentET.get(task.error_type) || 0) + 1);
+      // Get user's sessions with their problem_id
+      const { data: userSessions } = await supabase
+        .from('sessions')
+        .select('id, problem_id')
+        .eq('user_id', userId)
+        .gte('started_at', cutoffDate.toISOString());
+
+      if (userSessions && userSessions.length > 0) {
+        const sessionIds = userSessions.map(s => s.id);
+
+        // Get step evaluations for incorrect answers
+        const { data: evaluations } = await supabase
+          .from('step_evaluations')
+          .select('session_id, correctness')
+          .in('session_id', sessionIds)
+          .eq('correctness', 'incorrect');
+
+        if (evaluations) {
+          // Create a map of session_id to problem_id
+          const sessionToProblem = new Map(userSessions.map(s => [s.id, s.problem_id]));
+
+          // Get knowledge_points from problems table
+          const problemIds = [...new Set(evaluations.map(e => sessionToProblem.get(e.session_id)).filter(Boolean))];
+
+          if (problemIds.length > 0) {
+            const { data: problems } = await supabase
+              .from('problems')
+              .select('id, knowledge_points')
+              .in('id', problemIds);
+
+            if (problems) {
+              const problemKnowledgePoints = new Map(problems.map(p => [p.id, p.knowledge_points || []]));
+
+              // Count errors per knowledge point
+              for (const eval_ of evaluations) {
+                const problemId = sessionToProblem.get(eval_.session_id);
+                const kps = problemKnowledgePoints.get(problemId) || [];
+                for (const kp of kps) {
+                  weakKP.set(kp, (weakKP.get(kp) || 0) + 1);
+                }
+              }
+            }
           }
         }
       }
@@ -202,10 +234,10 @@ export class ProfileService {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysAgo);
 
-    // Get sessions
+    // Get sessions with status and hint_level
     const { data: sessions } = await supabase
       .from('sessions')
-      .select('status')
+      .select('status, hint_level')
       .eq('user_id', userId)
       .gte('started_at', cutoffDate.toISOString());
 
@@ -213,6 +245,9 @@ export class ProfileService {
       stats.totalSessions = sessions.length;
       stats.completedSessions = sessions.filter(s => s.status === 'completed').length;
       stats.abandonedSessions = sessions.filter(s => s.status === 'abandoned').length;
+
+      // Track hint usage: sessions with hint_level > 1 used hints
+      stats.hintUsage = sessions.filter(s => (s.hint_level || 1) > 1).length;
     }
 
     // Get step evaluations through sessions
@@ -310,12 +345,26 @@ export class ProfileService {
       const nextDate = new Date(date);
       nextDate.setDate(nextDate.getDate() + 1);
 
+      // First get user's sessions for this day
+      const { data: userSessions } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('user_id', userId)
+        .gte('started_at', date.toISOString())
+        .lt('started_at', nextDate.toISOString());
+
+      if (!userSessions || userSessions.length === 0) {
+        trend.push(0);
+        continue;
+      }
+
+      const sessionIds = userSessions.map(s => s.id);
+
+      // Then get evaluations for those sessions
       const { data: evaluations } = await supabase
         .from('step_evaluations')
         .select('correctness')
-        .eq('session_id', userId) // Note: Would need proper session join
-        .gte('created_at', date.toISOString())
-        .lt('created_at', nextDate.toISOString());
+        .in('session_id', sessionIds);
 
       if (evaluations && evaluations.length > 0) {
         const correct = evaluations.filter(e => e.correctness === 'correct').length;

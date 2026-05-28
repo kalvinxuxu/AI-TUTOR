@@ -6,12 +6,13 @@ import {
   Send,
   Lightbulb,
   Eye,
-  RotateCcw,
   CheckCircle,
   XCircle,
   AlertCircle,
   Loader2,
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,6 +35,12 @@ interface EvaluationResult {
   nextAction: string;
 }
 
+interface ProblemInfo {
+  normalizedText: string;
+  problemType: string | null;
+  knowledgePoints: string[];
+}
+
 const tutorStateLabels: Record<string, string> = {
   observe: "观察模式",
   hint: "提示模式",
@@ -44,16 +51,25 @@ const tutorStateLabels: Record<string, string> = {
 };
 
 const correctnessColors: Record<string, string> = {
-  correct: "text-green-600 bg-green-100 border-green-200",
-  partial: "text-amber-600 bg-amber-100 border-amber-200",
-  incorrect: "text-red-600 bg-red-100 border-red-200",
+  correct: "bg-green-50 border-green-200 text-green-800",
+  partial: "bg-amber-50 border-amber-200 text-amber-800",
+  incorrect: "bg-red-50 border-red-200 text-red-800",
 };
+
+const correctnessLabels: Record<string, string> = {
+  correct: "正确",
+  partial: "部分正确",
+  incorrect: "需要改进",
+};
+
+const MAX_HINT_LEVEL = 5;
 
 export default function SessionPage() {
   const params = useParams();
   const router = useRouter();
   const sessionId = params.id as string;
 
+  const [problem, setProblem] = useState<ProblemInfo | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [studentInput, setStudentInput] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -61,9 +77,12 @@ export default function SessionPage() {
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [tutorState, setTutorState] = useState("observe");
   const [hintLevel, setHintLevel] = useState(1);
+  const [consecutiveFails, setConsecutiveFails] = useState(0);
   const [lastEvaluation, setLastEvaluation] = useState<EvaluationResult | null>(null);
   const [sessionStatus, setSessionStatus] = useState<string>("active");
   const [error, setError] = useState<string | null>(null);
+  const [problemCollapsed, setProblemCollapsed] = useState(true);
+  const [showSolution, setShowSolution] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -71,24 +90,33 @@ export default function SessionPage() {
   const fetchMessages = useCallback(async () => {
     try {
       const response = await fetch(`/api/sessions/${sessionId}/messages`, {
-        headers: { "x-user-id": "demo-user" },
+        headers: { "x-user-id": "00000000-0000-0000-0000-000000000000" },
       });
       const data = await response.json();
 
       if (data.success) {
         setMessages(data.data.messages);
         setSessionStatus(data.data.sessionStatus || "active");
+        // Set real problem data from API
+        if (data.data.problem) {
+          setProblem(data.data.problem);
+        }
       } else {
-        setError(data.error || "Failed to load messages");
+        if (response.status === 404) {
+          setError("本次学习会话已失效，请重新上传题目开始。");
+          setSessionStatus("expired");
+        } else {
+          setError(data.error || "加载消息失败");
+        }
       }
     } catch {
-      setError("Failed to load session messages");
+      setError("无法加载会话消息");
     } finally {
       setIsLoading(false);
     }
   }, [sessionId]);
 
-  // Fetch messages on mount
+  // Fetch problem and messages on mount
   useEffect(() => {
     fetchMessages();
   }, [fetchMessages]);
@@ -97,6 +125,13 @@ export default function SessionPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Show solution button only after 2+ consecutive failures
+  useEffect(() => {
+    if (consecutiveFails >= 2) {
+      setShowSolution(true);
+    }
+  }, [consecutiveFails]);
 
   const handleSubmitStep = async () => {
     if (!studentInput.trim() || isSending) return;
@@ -109,12 +144,11 @@ export default function SessionPage() {
     setError(null);
 
     try {
-      // First, evaluate the step
       const evalResponse = await fetch(`/api/sessions/${sessionId}/evaluate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-user-id": "demo-user",
+          "x-user-id": "00000000-0000-0000-0000-000000000000",
         },
         body: JSON.stringify({ studentInput: inputToSend }),
       });
@@ -123,14 +157,19 @@ export default function SessionPage() {
 
       if (evalData.success) {
         setLastEvaluation(evalData.data);
+        // Update consecutive fail/success counters
+        if (evalData.data.correctness === "incorrect") {
+          setConsecutiveFails((prev) => prev + 1);
+        } else {
+          setConsecutiveFails(0);
+        }
       }
 
-      // Then send the message to get tutor response
       const response = await fetch(`/api/sessions/${sessionId}/messages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-user-id": "demo-user",
+          "x-user-id": "00000000-0000-0000-0000-000000000000",
         },
         body: JSON.stringify({ input: inputToSend }),
       });
@@ -141,14 +180,12 @@ export default function SessionPage() {
         setTutorState(data.data.tutorState || "observe");
         setHintLevel(data.data.hintLevel || 1);
         setSessionStatus(data.data.sessionStatus || "active");
-
-        // Refresh messages to get the latest
         await fetchMessages();
       } else {
-        setError(data.error || "Failed to send message");
+        setError(data.error || "发送消息失败");
       }
     } catch {
-      setError("Failed to communicate with tutor");
+      setError("与 Tutor 通信失败");
     } finally {
       setIsSending(false);
       setIsEvaluating(false);
@@ -156,8 +193,40 @@ export default function SessionPage() {
     }
   };
 
+  const handleHint = async () => {
+    if (isSending || hintLevel >= MAX_HINT_LEVEL) return;
+
+    setIsSending(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": "00000000-0000-0000-0000-000000000000",
+        },
+        body: JSON.stringify({ input: "", action: "hint" }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setTutorState(data.data.tutorState || "hint");
+        setHintLevel(data.data.hintLevel || Math.min(hintLevel + 1, MAX_HINT_LEVEL));
+        await fetchMessages();
+      } else {
+        setError(data.error || "获取提示失败");
+      }
+    } catch {
+      setError("获取提示失败");
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const handleGiveUp = async () => {
-    if (!confirm("Are you sure you want to give up? This session will end.")) {
+    if (!confirm("确定要放弃吗？会话将结束。")) {
       return;
     }
 
@@ -167,7 +236,7 @@ export default function SessionPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-user-id": "demo-user",
+          "x-user-id": "00000000-0000-0000-0000-000000000000",
         },
         body: JSON.stringify({ input: "", action: "give_up" }),
       });
@@ -179,14 +248,14 @@ export default function SessionPage() {
         await fetchMessages();
       }
     } catch {
-      setError("Failed to end session");
+      setError("结束会话失败");
     } finally {
       setIsSending(false);
     }
   };
 
   const handleSeeSolution = async () => {
-    if (!confirm("View the solution? You can still learn from it!")) {
+    if (!confirm("查看详细解析？你仍然可以从中学习！")) {
       return;
     }
 
@@ -196,7 +265,7 @@ export default function SessionPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-user-id": "demo-user",
+          "x-user-id": "00000000-0000-0000-0000-000000000000",
         },
         body: JSON.stringify({ input: "", action: "see_solution" }),
       });
@@ -205,11 +274,12 @@ export default function SessionPage() {
 
       if (data.success) {
         setTutorState("explain");
-        setHintLevel(5);
+        setHintLevel(MAX_HINT_LEVEL);
+        setSessionStatus("completed");
         await fetchMessages();
       }
     } catch {
-      setError("Failed to reveal solution");
+      setError("查看解析失败");
     } finally {
       setIsSending(false);
     }
@@ -222,42 +292,59 @@ export default function SessionPage() {
     }
   };
 
+  const handleBack = () => {
+    router.push("/history");
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => router.push("/history")}
-            >
+      <header className="bg-white border-b border-slate-200 px-4 py-3 sticky top-0 z-10">
+        <div className="max-w-2xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={handleBack}>
               <ChevronLeft className="w-5 h-5" />
             </Button>
-            <div>
-              <h1 className="text-lg font-semibold text-slate-900">Tutoring Session</h1>
-              <p className="text-sm text-slate-500">Session ID: {sessionId.slice(0, 8)}...</p>
-            </div>
+            <span className="font-medium text-slate-900">当前题目</span>
           </div>
-          <div className="flex items-center gap-3">
-            <Badge variant="outline" className="flex items-center gap-1">
-              <Lightbulb className="w-3 h-3" />
-              Hint Level {hintLevel}
-            </Badge>
-            <Badge
-              variant={tutorState === "observe" ? "secondary" : "default"}
-              className="flex items-center gap-1"
-            >
-              {tutorStateLabels[tutorState] || tutorState}
-            </Badge>
-          </div>
+          <Badge variant="outline" className="flex items-center gap-1">
+            <ChevronDown className="w-3 h-3" />
+          </Badge>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="flex-1 overflow-hidden">
-        <div className="max-w-4xl mx-auto h-full flex flex-col p-6">
+        <div className="max-w-2xl mx-auto h-full flex flex-col p-4">
+          {/* Problem Card - Collapsible */}
+          {problem && (
+            <Card className="mb-4 border-slate-200">
+              <button
+                className="w-full p-4 flex items-center justify-between text-left"
+                onClick={() => setProblemCollapsed(!problemCollapsed)}
+              >
+                <span className="font-medium text-slate-700 text-sm">题目内容</span>
+                {problemCollapsed ? (
+                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                ) : (
+                  <ChevronUp className="w-4 h-4 text-slate-400" />
+                )}
+              </button>
+              {!problemCollapsed && (
+                <CardContent className="pt-0">
+                  <p className="text-slate-800 whitespace-pre-wrap leading-relaxed">
+                    {problem.normalizedText}
+                  </p>
+                  {problem.problemType && (
+                    <Badge variant="secondary" className="mt-2">
+                      {problem.problemType}
+                    </Badge>
+                  )}
+                </CardContent>
+              )}
+            </Card>
+          )}
+
           {/* Chat Area */}
           <div className="flex-1 overflow-y-auto space-y-4 mb-4">
             {isLoading ? (
@@ -265,8 +352,8 @@ export default function SessionPage() {
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
               </div>
             ) : messages.length === 0 ? (
-              <div className="flex items-center justify-center h-64 text-slate-500">
-                No messages yet. Start typing your solution!
+              <div className="flex items-center justify-center h-64 text-slate-500 text-sm">
+                准备好后，请输入你的解题步骤或想法
               </div>
             ) : (
               messages.map((message) => (
@@ -277,11 +364,11 @@ export default function SessionPage() {
                   }`}
                 >
                   <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                       message.role === "student"
                         ? "bg-primary text-primary-foreground"
                         : message.role === "system"
-                        ? "bg-amber-100 text-amber-900 border border-amber-200"
+                        ? "bg-amber-50 text-amber-900 border border-amber-200"
                         : "bg-white border border-slate-200 text-slate-900"
                     }`}
                   >
@@ -302,24 +389,20 @@ export default function SessionPage() {
             {lastEvaluation && (
               <div className="flex justify-end">
                 <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-3 border ${correctnessColors[lastEvaluation.correctness]}`}
+                  className={`max-w-[85%] rounded-2xl px-4 py-3 border ${correctnessColors[lastEvaluation.correctness]}`}
                 >
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-1">
                     {lastEvaluation.correctness === "correct" && (
-                      <CheckCircle className="w-5 h-5" />
+                      <CheckCircle className="w-4 h-4" />
                     )}
                     {lastEvaluation.correctness === "incorrect" && (
-                      <XCircle className="w-5 h-5" />
+                      <XCircle className="w-4 h-4" />
                     )}
                     {lastEvaluation.correctness === "partial" && (
-                      <AlertCircle className="w-5 h-5" />
+                      <AlertCircle className="w-4 h-4" />
                     )}
-                    <span className="font-semibold capitalize">
-                      {lastEvaluation.correctness === "correct"
-                        ? "Correct!"
-                        : lastEvaluation.correctness === "incorrect"
-                        ? "Needs Improvement"
-                        : "Partially Correct"}
+                    <span className="font-medium text-sm">
+                      {correctnessLabels[lastEvaluation.correctness]}
                     </span>
                   </div>
                   <p className="text-sm opacity-90">{lastEvaluation.feedback}</p>
@@ -331,9 +414,9 @@ export default function SessionPage() {
             {isEvaluating && (
               <div className="flex justify-start">
                 <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3">
-                  <div className="flex items-center gap-2 text-slate-500">
+                  <div className="flex items-center gap-2 text-slate-500 text-sm">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Evaluating your step...</span>
+                    <span>正在评估你的步骤...</span>
                   </div>
                 </div>
               </div>
@@ -342,28 +425,54 @@ export default function SessionPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Error Message */}
-          {error && (
-            <div className="mb-4 p-3 rounded-lg bg-red-100 text-red-700 border border-red-200 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" />
-              {error}
+          {/* Hint Progress Indicator */}
+          {sessionStatus === "active" && (
+            <div className="text-center py-2 text-sm text-slate-500">
+              提示进度：第 {hintLevel} 层 / 共 {MAX_HINT_LEVEL} 层
             </div>
           )}
 
-          {/* Session Ended Message */}
-          {sessionStatus === "abandoned" && (
+          {/* Error Message */}
+          {error && (
+            <div className="mb-3 p-3 rounded-lg bg-red-50 text-red-700 border border-red-200 flex items-center gap-2 text-sm">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Session Ended - View Result */}
+          {sessionStatus !== "active" && sessionStatus !== "expired" && (
             <Card className="mb-4 bg-amber-50 border-amber-200">
-              <CardContent className="p-4">
-                <p className="text-amber-800 text-center">
-                  Session ended. Keep practicing! You can start a new session anytime.
+              <CardContent className="p-4 text-center">
+                <p className="text-amber-800 text-sm mb-3">
+                  {sessionStatus === "abandoned"
+                    ? "会话已结束，继续练习吧！"
+                    : "本题已完成"}
                 </p>
                 <Button
                   variant="outline"
-                  className="mt-3 w-full"
+                  className="w-full"
+                  onClick={() => router.push(`/result/${sessionId}`)}
+                >
+                  查看结果
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Session Expired - Redirect to Upload */}
+          {sessionStatus === "expired" && (
+            <Card className="mb-4 bg-red-50 border-red-200">
+              <CardContent className="p-4 text-center">
+                <p className="text-red-800 text-sm mb-3">
+                  本次学习会话已失效，请重新上传题目开始。
+                </p>
+                <Button
+                  variant="outline"
+                  className="w-full"
                   onClick={() => router.push("/upload")}
                 >
-                  <RotateCcw className="w-4 h-4 mr-2" />
-                  Start New Session
+                  重新上传题目
                 </Button>
               </CardContent>
             </Card>
@@ -372,20 +481,21 @@ export default function SessionPage() {
           {/* Input Area */}
           {sessionStatus === "active" && (
             <Card className="border-slate-200">
-              <CardContent className="p-4">
-                <div className="flex gap-3">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex gap-2">
                   <Input
                     ref={inputRef}
                     value={studentInput}
                     onChange={(e) => setStudentInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Type your solution steps here..."
+                    placeholder="输入你的步骤或想法..."
                     disabled={isSending}
                     className="flex-1"
                   />
                   <Button
                     onClick={handleSubmitStep}
                     disabled={!studentInput.trim() || isSending}
+                    size="icon"
                   >
                     {isSending ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -395,27 +505,41 @@ export default function SessionPage() {
                   </Button>
                 </div>
 
-                {/* Action Buttons */}
-                <div className="flex justify-between mt-4 pt-4 border-t border-slate-100">
+                {/* Secondary Action Buttons */}
+                <div className="flex justify-between pt-2 border-t border-slate-100">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleGiveUp}
                     disabled={isSending}
-                    className="text-slate-500"
+                    className="text-slate-500 text-xs"
                   >
-                    Give Up
+                    放弃
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSeeSolution}
-                    disabled={isSending}
-                    className="text-slate-500"
-                  >
-                    <Eye className="w-4 h-4 mr-1" />
-                    See Solution
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleHint}
+                      disabled={isSending || hintLevel >= MAX_HINT_LEVEL}
+                      className="text-xs gap-1"
+                    >
+                      <Lightbulb className="w-3 h-3" />
+                      给我一点提示
+                    </Button>
+                    {showSolution && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleSeeSolution}
+                        disabled={isSending}
+                        className="text-xs text-amber-600 border-amber-200 hover:bg-amber-50"
+                      >
+                        <Eye className="w-3 h-3 mr-1" />
+                        查看详细解析
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>

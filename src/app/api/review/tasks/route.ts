@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { reviewService } from '@/lib/domain/review-service';
+import { getUserIdFromRequest } from '@/lib/auth';
 
 // Validation schema for query params per TDG Section 16.3
 const querySchema = z.object({
@@ -8,21 +9,11 @@ const querySchema = z.object({
   status: z.enum(['pending', 'completed', 'skipped']).optional(),
 });
 
-// Helper to get user ID
-function getUserId(request: NextRequest): string | null {
-  const userIdHeader = request.headers.get('x-user-id');
-  if (userIdHeader) return userIdHeader;
-
-  const cookies = request.cookies.getAll();
-  const userIdCookie = cookies.find((c) => c.name === 'user_id');
-  return userIdCookie?.value || null;
-}
-
 // GET /api/review/tasks - Get review tasks
 export async function GET(request: NextRequest) {
   try {
     // Get user ID
-    const userId = getUserId(request);
+    const userId = await getUserIdFromRequest(request);
     if (!userId) {
       return NextResponse.json(
         { success: false, error: 'Authentication required' },
@@ -32,8 +23,9 @@ export async function GET(request: NextRequest) {
 
     // Parse and validate query params per TDG Section 16.3
     const searchParams = request.nextUrl.searchParams;
-    const date = searchParams.get('date');
-    const status = searchParams.get('status');
+    // URLSearchParams.get() returns null for missing params, convert to undefined for Zod
+    const date = searchParams.get('date') || undefined;
+    const status = searchParams.get('status') || undefined;
 
     const queryValidation = querySchema.safeParse({ date, status });
     if (!queryValidation.success) {

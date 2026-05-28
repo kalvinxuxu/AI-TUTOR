@@ -39,7 +39,9 @@ export default function OCRConfirmPage() {
 
   const fetchProblem = useCallback(async () => {
     try {
-      const response = await fetch(`/api/problems/${problemId}`);
+      const response = await fetch(`/api/problems/${problemId}`, {
+        headers: { "x-user-id": "00000000-0000-0000-0000-000000000000" },
+      });
       const data = await response.json();
 
       if (data.success && data.data) {
@@ -95,7 +97,7 @@ export default function OCRConfirmPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-user-id": "demo-user",
+          "x-user-id": "00000000-0000-0000-0000-000000000000",
         },
         body: JSON.stringify({ problemId }),
       });

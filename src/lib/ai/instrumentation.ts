@@ -41,11 +41,69 @@ export function calculateCost(modelName: string, inputTokens: number, outputToke
 const callLogs: ModelCallLog[] = [];
 const MAX_LOGS = 1000;
 
+// Lazy import Supabase admin client to avoid circular dependencies
+let supabaseAdmin: ReturnType<typeof import('../supabase/server').getSupabaseServerClient> | null = null;
+
+async function getSupabaseAdmin() {
+  if (!supabaseAdmin) {
+    try {
+      const { getSupabaseServerClient } = await import('../supabase/server');
+      supabaseAdmin = getSupabaseServerClient();
+    } catch (e) {
+      console.warn('[AI Instrumentation] Could not load Supabase admin client');
+    }
+  }
+  return supabaseAdmin;
+}
+
+/**
+ * Persist a call log to Supabase (non-blocking)
+ * Falls back to structured console.log if Supabase is unavailable
+ */
+async function persistCallLog(log: ModelCallLog): Promise<void> {
+  // Try Supabase first
+  const supabase = await getSupabaseAdmin();
+  if (supabase) {
+    try {
+      const { error } = await supabase.from('ai_call_logs').insert({
+        request_id: log.request_id,
+        user_id: log.user_id,
+        session_id: log.session_id,
+        model_name: log.model_name,
+        latency_ms: log.latency_ms,
+        input_tokens: log.input_tokens,
+        output_tokens: log.output_tokens,
+        success: log.success,
+        fallback_used: log.fallback_used,
+        operation: log.operation,
+        error: log.error || null,
+        cost_usd: log.cost_usd || null,
+        timestamp: log.timestamp || new Date().toISOString(),
+      });
+
+      if (error) {
+        throw error;
+      }
+      return; // Successfully persisted
+    } catch (e) {
+      // Supabase failed, fall through to console.log
+      console.warn('[AI Instrumentation] Supabase insert failed, using console.log:', e);
+    }
+  }
+
+  // Fallback: structured console.log for Vercel log capture
+  console.log(JSON.stringify({
+    type: 'ai_call_log',
+    ...log,
+    cost_usd: log.cost_usd || calculateCost(log.model_name, log.input_tokens, log.output_tokens),
+  }));
+}
+
 /**
  * Log a model call for monitoring and cost tracking
  * @param call - The model call log entry
  */
-export function logModelCall(call: ModelCallLog): void {
+export async function logModelCall(call: ModelCallLog): Promise<void> {
   const logEntry: ModelCallLog = {
     ...call,
     timestamp: new Date().toISOString(),
@@ -66,8 +124,11 @@ export function logModelCall(call: ModelCallLog): void {
     }
   }
 
-  // In production, would send to observability service
-  // e.g., Datadog, New Relic, custom analytics
+  // Persist to Supabase or fallback to structured console.log (non-blocking)
+  persistCallLog(logEntry).catch((e) => {
+    // Should not happen since we handle errors inside persistCallLog
+    console.error('[AI Instrumentation] Unexpected error in persistCallLog:', e);
+  });
 }
 
 /**

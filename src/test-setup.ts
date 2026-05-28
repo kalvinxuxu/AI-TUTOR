@@ -28,3 +28,43 @@ vi.mock('@/lib/supabase/client', () => ({
 vi.mock('uuid', () => ({
   v4: vi.fn().mockReturnValue('test-uuid-1234'),
 }));
+
+// Mock deepseek AI module (initialized at module scope, causes credential errors in tests)
+vi.mock('@/lib/ai/deepseek', () => ({
+  deepseekAdapter: {
+    generateResponse: vi.fn().mockResolvedValue({
+      message: 'Mocked response',
+      tutorState: 'observe',
+      hintLevel: 1,
+      isComplete: false,
+    }),
+    generateInitialMessage: vi.fn().mockResolvedValue({
+      message: 'Mocked initial message',
+      tutorState: 'hint',
+      hintLevel: 1,
+      isComplete: false,
+    }),
+    generateHint: vi.fn().mockResolvedValue('Mocked hint'),
+    evaluateStep: vi.fn().mockResolvedValue({
+      correctness: 'partial' as const,
+      understandingLevel: 'partial_understanding' as const,
+      primaryErrorType: null,
+      secondaryErrorTypes: [],
+      feedbackSummary: '继续努力',
+      nextAction: 'hint' as const,
+    }),
+  },
+  generateResponse: vi.fn().mockResolvedValue({
+    message: 'Mocked response',
+    tutorState: 'observe' as const,
+    hintLevel: 1,
+    isComplete: false,
+  }),
+  generateInitialMessage: vi.fn().mockResolvedValue({
+    message: 'Mocked initial message',
+    tutorState: 'hint' as const,
+    hintLevel: 1,
+    isComplete: false,
+  }),
+  generateHint: vi.fn().mockResolvedValue('Mocked hint'),
+}));

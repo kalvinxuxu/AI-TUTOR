@@ -6,6 +6,7 @@ import { evaluationService } from '@/lib/domain/evaluation-service';
 import { reviewService } from '@/lib/domain/review-service';
 import { tutorEngine } from '@/lib/domain/tutor-engine';
 import { NextAction, ErrorType } from '@/types/domain';
+import { getUserIdFromRequest } from '@/lib/auth';
 
 // Validation schema per TDG Section 16.3
 const evaluateSchema = z.object({
@@ -14,16 +15,6 @@ const evaluateSchema = z.object({
     .min(1, 'Student input is required')
     .max(10000, 'Input too long'),
 });
-
-// Helper to get user ID
-function getUserId(request: NextRequest): string | null {
-  const userIdHeader = request.headers.get('x-user-id');
-  if (userIdHeader) return userIdHeader;
-
-  const cookies = request.cookies.getAll();
-  const userIdCookie = cookies.find((c) => c.name === 'user_id');
-  return userIdCookie?.value || null;
-}
 
 // POST /api/sessions/[id]/evaluate - Evaluate session
 export async function POST(
@@ -34,7 +25,7 @@ export async function POST(
     const { id: sessionId } = await params;
 
     // Get user ID
-    const userId = getUserId(request);
+    const userId = await getUserIdFromRequest(request);
     if (!userId) {
       return NextResponse.json(
         { success: false, error: 'Authentication required' },

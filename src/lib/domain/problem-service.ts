@@ -6,7 +6,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { Problem } from '@/types/domain';
-import { extractProblemText, extractProblemTextFromBase64 } from '@/lib/ai/gemini';
+import { extractProblemText, extractProblemTextFromBase64 } from '@/lib/ai/tencent-ocr';
 import { supabase } from '@/lib/supabase/client';
 
 /**
