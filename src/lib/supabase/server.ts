@@ -29,8 +29,22 @@ export function getSupabaseServerClient() {
 
 /**
  * Get a Supabase client for admin operations (bypasses RLS)
+ * Lazy initialization to prevent build failures when env vars are missing
  */
-export const supabaseAdmin = getSupabaseServerClient();
+export function getSupabaseAdmin() {
+  return getSupabaseServerClient();
+}
+
+/**
+ * @deprecated Use getSupabaseAdmin() instead - direct export throws if env vars missing at build time
+ */
+Object.defineProperty(module, 'supabaseAdmin', {
+  get: () => {
+    console.warn('supabaseAdmin direct export is deprecated, use getSupabaseAdmin() instead');
+    return getSupabaseServerClient();
+  },
+  configurable: true,
+});
 
 /**
  * Database table types for type safety

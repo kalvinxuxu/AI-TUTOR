@@ -37,7 +37,15 @@ export async function getUserIdFromRequest(request: NextRequest): Promise<string
     },
   };
 
-  // Create Supabase SSR client
+  // Create Supabase SSR client - guard against missing config
+  if (!supabaseUrl || !supabaseAnonKey) {
+    if (isDevMode && devUserId) {
+      return devUserId;
+    }
+    console.warn('Supabase not configured, cannot authenticate user');
+    return null;
+  }
+
   const supabase = createServerClient(
     supabaseUrl,
     supabaseAnonKey,
