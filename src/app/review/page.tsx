@@ -42,7 +42,7 @@ export default function ReviewPage() {
     setIsLoading(true);
     try {
       const response = await fetch("/api/review/tasks?status=pending", {
-        headers: { "x-user-id": "demo-user" },
+        headers: { "x-user-id": "00000000-0000-0000-0000-000000000000" },
       });
 
       const data = await response.json();
@@ -68,7 +68,7 @@ export default function ReviewPage() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': 'demo-user',
+          'x-user-id': '00000000-0000-0000-0000-000000000000',
         },
         body: JSON.stringify({ action: 'complete' }),
       });
@@ -94,7 +94,7 @@ export default function ReviewPage() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': 'demo-user',
+          'x-user-id': '00000000-0000-0000-0000-000000000000',
         },
         body: JSON.stringify({ action: 'skip' }),
       });

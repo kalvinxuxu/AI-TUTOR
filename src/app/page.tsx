@@ -29,7 +29,7 @@ export default function HomePage() {
       try {
         // Fetch review task count
         const reviewRes = await fetch("/api/review/tasks?status=pending", {
-          headers: { "x-user-id": "demo-user" },
+          headers: { "x-user-id": "00000000-0000-0000-0000-000000000000" },
         });
         const reviewData = await reviewRes.json();
         if (reviewData.success) {
